@@ -28,3 +28,9 @@ trend charts and customizable price alerts.
 * **Storage**: Local SQLite database (`SQLiteOpenHelper`)
 * **Background Processing**: AndroidX `WorkManager`
 * **API**: PrivatBank Public Exchange API
+
+## Disclaimer
+
+Currency Rates 24 is an independent, unofficial utility application and is not affiliated with,
+endorsed by, or sponsored by PrivatBank. Exchange rates are retrieved from PrivatBank's public API
+for informational purposes only and do not constitute financial or investment advice.
