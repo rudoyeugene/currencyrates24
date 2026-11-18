@@ -1,0 +1,60 @@
+name: Do Release
+on:
+  push:
+    branches:
+      - 'main'
+  workflow_dispatch:
+
+jobs:
+  apk:
+    name: Build and Deploy APK into Releases
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'liberica'
+          java-version: 21
+
+      - name: Allow executions of gradlew
+        run: chmod +x gradlew
+
+      - name: Build Currency Rates 24 APK
+        id: build_apk
+        run: bash ./gradlew assembleDebug
+
+      - name: Upload Currency Rates 24 APK to Github Artifactory
+        uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Get Currency Rates 24 version
+        id: get_version
+        run: |
+          APP_VERSION=$(cat app/build.gradle | grep versionName | cut -d '"' -f2 | awk '{print $1}')
+          echo "APP_VERSION=$APP_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create new Currency Rates 24 Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+        with:
+          tag_name: v${{ steps.get_version.outputs.APP_VERSION }}
+          release_name: v${{ steps.get_version.outputs.APP_VERSION }}
+          draft: false
+          prerelease: false
+
+      - name: Push Currency Rates 24 APK to new Release
+        id: upload-release-asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+          asset_path: ./app/build/outputs/apk/debug/app-debug.apk
+          asset_name: com.rudyii.currencyrates24_v${{ steps.get_version.outputs.APP_VERSION }}.apk
+          asset_content_type: application/zip

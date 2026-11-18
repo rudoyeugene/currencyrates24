@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Курси Валют 24</string>
+    <string name="title_settings">Налаштування</string>
+
+    <!-- Menu -->
+    <string name="menu_add_alert">Додати сповіщення</string>
+    <string name="menu_refresh">Оновити</string>
+    <string name="menu_settings">Налаштування</string>
+
+    <!-- Main Activity -->
+    <string name="header_usd_uah">$/₴</string>
+    <string name="header_eur_uah">€/₴</string>
+    <string name="legend_buy_sale">● Купівля   ● Продаж</string>
+    <string name="delta_placeholder">Купівля: -- | Продаж: --</string>
+    <string name="waiting_for_data">Очікування даних...</string>
+    <string name="delta_single_format">Купівля: %1$.2f (0.00%%) | Продаж: %2$.2f (0.00%%)</string>
+    <string name="delta_full_format">Купівля: %1$.2f %2$s %3$+.2f (%4$+.2f%%) | Продаж: %5$.2f %6$s %7$+.2f (%8$+.2f%%)</string>
+    <string name="btn_manage_alerts">Керування активними сповіщеннями</string>
+    <string name="toast_syncing_rates">Оновлення курсів...</string>
+
+    <!-- Alerts Dialogs -->
+    <string name="dialog_set_alert_title">Встановити сповіщення про курс</string>
+    <string name="hint_target_rate">Цільовий курс ₴ (напр. 41.50)</string>
+    <string name="btn_save">Зберегти</string>
+    <string name="btn_cancel">Скасувати</string>
+    <string name="btn_close">Закрити</string>
+    <string name="toast_alert_saved">Сповіщення збережено</string>
+    <string name="toast_no_active_alerts">Немає активних сповіщень</string>
+    <string name="dialog_active_alerts_title">Активні сповіщення</string>
+    <string name="alert_item_format">%1$s %2$s %3$s %4$.2f ₴ (Натисніть для видалення)</string>
+    <string name="toast_alert_removed">Сповіщення видалено</string>
+    <string name="type_buy">КУПІВЛЯ</string>
+    <string name="type_sale">ПРОДАЖ</string>
+    <string name="cond_above">ВИЩЕ</string>
+    <string name="cond_below">НИЖЧЕ</string>
+
+    <!-- Settings Activity -->
+    <string name="refresh_interval_format">Інтервал оновлення: %s</string>
+    <string name="next_sync_hint_format">Наступне заплановане оновлення о %s</string>
+    <string name="interval_short_min">%d хв</string>
+    <string name="interval_short_hour_one">1 година</string>
+    <string name="interval_short_hours">%d год</string>
+    <string-array name="refresh_interval_labels">
+        <item>15 хвилин (о :01, :16, :31, :46)</item>
+        <item>30 хвилин (о :01, :31)</item>
+        <item>1 година (щогодини о :01)</item>
+        <item>3 години (00:01, 03:01, 06:01...)</item>
+        <item>6 годин (00:01, 06:01, 12:01, 18:01)</item>
+        <item>8 годин (00:01, 08:01, 16:01)</item>
+        <item>12 годин (00:01, 12:01)</item>
+    </string-array>
+
+    <string name="public_rates_title">Публічні курси</string>
+    <string name="public_rates_desc">Увімкнено: готівкові курси відділень. Вимкнено: комерційні безготівкові курси</string>
+
+    <string name="history_retention_title">Зберігання історії (днів)</string>
+    <string name="history_retention_desc">Кількість днів зберігання історії курсів (за замовчуванням 28)</string>
+
+    <string name="alert_notifications_title">Сповіщення про курс</string>
+    <string name="alert_notifications_default_desc">Налаштуйте звук і вібрацію сповіщень у системних налаштуваннях Android</string>
+    <string name="btn_sound_vibration_settings">Налаштування звуку та вібрації</string>
+    <string name="channel_status_format">Звук: %1$s  |  Вібрація: %2$s</string>
+    <string name="state_on">Увімк.</string>
+    <string name="state_off">Вимк.</string>
+    <string name="sound_silent">Без звуку</string>
+    <string name="sound_default">За замовчуванням</string>
+
+    <string name="app_theme_title">Тема додатка</string>
+    <string-array name="theme_labels">
+        <item>Як у системі</item>
+        <item>Світла тема</item>
+        <item>Темна тема</item>
+    </string-array>
+
+    <string name="btn_save_settings">Зберегти налаштування</string>
+    <string name="toast_settings_saved">Налаштування збережено</string>
+
+    <!-- Notifications & Worker -->
+    <string name="notification_channel_name">Сповіщення про курси валют</string>
+    <string name="notification_channel_desc">Сповіщення, коли $ або € досягає заданого курсу</string>
+    <string name="notification_alert_title">Спрацювало сповіщення: %1$s (%2$s)</string>
+    <string name="notification_alert_body">Курс %1$s (%2$s) зараз %3$.2f ₴ (Ціль: %4$s %5$.2f)</string>
+
+    <!-- Widgets -->
+    <string name="widget_numbers_label">Курси валют (Цифри)</string>
+    <string name="widget_graph_label">Курси валют (Графік за 7 днів)</string>
+    <string name="widget_buy">Купівля</string>
+    <string name="widget_sell">Продаж</string>
+    <string name="cd_refresh_rates">Оновити курси</string>
+    <string name="cd_trend_graph">Графік динаміки курсу за 7 днів</string>
+    <string name="alert_fixed_target_format">Валюта: %1$s  |  Тип: %2$s</string>
+</resources>

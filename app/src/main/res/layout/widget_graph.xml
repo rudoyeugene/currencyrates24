@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widgetRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:padding="10dp">
+
+    <ImageView
+        android:id="@+id/ivWidgetGraph"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/cd_trend_graph"
+        android:scaleType="fitXY" />
+
+    <!-- Currency Switcher Chip (Top End) -->
+    <TextView
+        android:id="@+id/tvGraphCurrencySwitch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="2dp"
+        android:text="$ ▾"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <!-- Manual Refresh Button (Bottom Right) -->
+    <ImageButton
+        android:id="@+id/btnWidgetRefresh"
+        android:layout_width="26dp"
+        android:layout_height="26dp"
+        android:layout_gravity="bottom|end"
+        android:background="@android:color/transparent"
+        android:contentDescription="@string/cd_refresh_rates"
+        android:padding="5dp"
+        android:scaleType="fitCenter"
+        android:src="@android:drawable/ic_popup_sync"
+        android:tint="@color/text_secondary" />
+
+</FrameLayout>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.CurrencyRates24" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/bg_screen</item>
+        <item name="android:colorBackground">@color/bg_screen</item>
+        <item name="android:statusBarColor">@color/topbar_bg</item>
+        <item name="android:navigationBarColor">@color/bg_screen</item>
+    </style>
+
+    <style name="Widget.App.InverseToolbar" parent="Widget.Material3.Toolbar">
+        <item name="android:background">@color/topbar_bg</item>
+        <item name="titleTextColor">@color/topbar_on</item>
+        <item name="subtitleTextColor">@color/topbar_on</item>
+        <item name="navigationIconTint">@color/topbar_on</item>
+        <item name="colorControlNormal">@color/topbar_on</item>
+    </style>
+</resources>

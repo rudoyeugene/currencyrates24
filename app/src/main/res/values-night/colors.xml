@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_screen">#0F1115</color>
+    <color name="bg_card">#1A1D24</color>
+    <color name="card_stroke">#2C313C</color>
+    <color name="text_primary">#F3F4F6</color>
+    <color name="text_secondary">#9CA3AF</color>
+    <color name="topbar_bg">#F3F4F6</color>
+    <color name="topbar_on">#111827</color>
+    <color name="graph_grid">#26FFFFFF</color>
+    <color name="graph_axis_text">#9CA3AF</color>
+    <color name="line_buy">#4CAF50</color>
+    <color name="line_sale">#42A5F5</color>
+    <color name="widget_bg">#F21A1D24</color>
+    <color name="widget_text">#F3F4F6</color>
+</resources>
