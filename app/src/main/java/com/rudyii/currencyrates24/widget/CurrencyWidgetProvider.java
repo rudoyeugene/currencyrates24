@@ -156,19 +156,14 @@ public class CurrencyWidgetProvider extends AppWidgetProvider {
         super.onReceive(context, intent);
         String action = intent.getAction();
         if (ACTION_MANUAL_REFRESH.equals(action)) {
-            Toast.makeText(context, "Syncing rates...", Toast.LENGTH_SHORT).show();
-            RateSyncWorker.runImmediateSync(context);
+            Toast.makeText(context, R.string.toast_syncing_rates, Toast.LENGTH_SHORT).show();
+            RateSyncWorker.runImmediateSync(context, true);
         } else if (ACTION_CYCLE_CURRENCY.equals(action)) {
             int widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
             if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
                 CurrencyDbHelper db = CurrencyDbHelper.getInstance(context);
                 String current = db.getSetting("widget_ccy_" + widgetId, "USD");
-                String next;
-                if ("USD".equals(current)) {
-                    next = "EUR";
-                } else {
-                    next = "USD";
-                }
+                String next = "USD".equals(current) ? "EUR" : "USD";
                 db.saveSetting("widget_ccy_" + widgetId, next);
                 updateSingleWidget(context, AppWidgetManager.getInstance(context), widgetId);
             }

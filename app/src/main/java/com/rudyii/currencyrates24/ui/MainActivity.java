@@ -6,11 +6,15 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -49,6 +53,9 @@ import java.util.Locale;
 import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
+
+    private static final int COLOR_BUY_DOT = Color.parseColor("#2E7D32");
+    private static final int COLOR_SALE_DOT = Color.parseColor("#1565C0");
 
     private final Handler refreshTimeoutHandler = new Handler(Looper.getMainLooper());
     private CurrencyDbHelper db;
@@ -105,7 +112,10 @@ public class MainActivity extends AppCompatActivity {
         graphUsd = findViewById(R.id.graphUsd);
         graphEur = findViewById(R.id.graphEur);
 
-        swipeRefresh.setOnRefreshListener(this::triggerManualSync);
+        applyLegendDotColors(findViewById(R.id.tvUsdLegend));
+        applyLegendDotColors(findViewById(R.id.tvEurLegend));
+
+        swipeRefresh.setOnRefreshListener(() -> triggerManualSync(true));
 
         graphUsd.setOnPointTapListener((record, rateType, rateValue) ->
                 showAlertDialog(record.ccy, rateType, rateValue, true));
@@ -116,11 +126,32 @@ public class MainActivity extends AppCompatActivity {
 
         requestNotificationPermissionIfNeeded();
         if (db.getRatesForCurrency("USD").isEmpty()) {
-            triggerManualSync();
+            triggerManualSync(false);
         }
     }
 
-    private void triggerManualSync() {
+    private void applyLegendDotColors(TextView legendView) {
+        if (legendView == null) return;
+        String text = getString(R.string.legend_buy_sale);
+        SpannableString spannable = new SpannableString(text);
+
+        int firstDot = text.indexOf('●');
+        if (firstDot >= 0) {
+            spannable.setSpan(new ForegroundColorSpan(COLOR_BUY_DOT),
+                    firstDot, firstDot + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            int secondDot = text.indexOf('●', firstDot + 1);
+            if (secondDot >= 0) {
+                spannable.setSpan(new ForegroundColorSpan(COLOR_SALE_DOT),
+                        secondDot, secondDot + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
+        legendView.setText(spannable);
+    }
+
+    private void triggerManualSync(boolean isManual) {
+        if (isManual) {
+            Toast.makeText(this, R.string.toast_syncing_rates, Toast.LENGTH_SHORT).show();
+        }
         swipeRefresh.setRefreshing(true);
 
         if (refreshTimeoutRunnable != null) {
@@ -133,7 +164,7 @@ public class MainActivity extends AppCompatActivity {
         };
         refreshTimeoutHandler.postDelayed(refreshTimeoutRunnable, 15000L);
 
-        UUID workId = RateSyncWorker.runImmediateSync(this);
+        UUID workId = RateSyncWorker.runImmediateSync(this, isManual);
         LiveData<WorkInfo> liveData = WorkManager.getInstance(this).getWorkInfoByIdLiveData(workId);
 
         liveData.observe(this, new Observer<WorkInfo>() {

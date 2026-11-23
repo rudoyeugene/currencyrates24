@@ -2,7 +2,12 @@ package com.rudyii.currencyrates24.worker;
 
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
+import android.content.Intent;
+import android.os.Handler;
+import android.os.Looper;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
@@ -18,6 +23,8 @@ import androidx.work.WorkerParameters;
 import com.rudyii.currencyrates24.R;
 import com.rudyii.currencyrates24.db.CurrencyDbHelper;
 import com.rudyii.currencyrates24.model.PriceAlert;
+import com.rudyii.currencyrates24.model.RateRecord;
+import com.rudyii.currencyrates24.ui.MainActivity;
 import com.rudyii.currencyrates24.widget.GraphWidgetProvider;
 import com.rudyii.currencyrates24.widget.NumbersWidgetProvider;
 
@@ -42,6 +49,8 @@ public class RateSyncWorker extends Worker {
     private static final String SCHEDULED_WORK_NAME = "PrivatCurrencyAlignedSync";
     private static final String IMMEDIATE_WORK_NAME = "PrivatCurrencyImmediateSync";
     private static final String KEY_IS_SCHEDULED = "is_scheduled";
+    private static final String KEY_IS_MANUAL = "is_manual";
+    private static final double RATE_EPSILON = 0.0001;
 
     public RateSyncWorker(@NonNull Context context, @NonNull WorkerParameters params) {
         super(context, params);
@@ -86,6 +95,7 @@ public class RateSyncWorker extends Worker {
 
         Data inputData = new Data.Builder()
                 .putBoolean(KEY_IS_SCHEDULED, true)
+                .putBoolean(KEY_IS_MANUAL, false)
                 .build();
 
         OneTimeWorkRequest request = new OneTimeWorkRequest.Builder(RateSyncWorker.class)
@@ -102,12 +112,17 @@ public class RateSyncWorker extends Worker {
     }
 
     public static UUID runImmediateSync(Context context) {
+        return runImmediateSync(context, false);
+    }
+
+    public static UUID runImmediateSync(Context context, boolean isManual) {
         Constraints constraints = new Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build();
 
         Data inputData = new Data.Builder()
                 .putBoolean(KEY_IS_SCHEDULED, false)
+                .putBoolean(KEY_IS_MANUAL, isManual)
                 .build();
 
         OneTimeWorkRequest oneTime = new OneTimeWorkRequest.Builder(RateSyncWorker.class)
@@ -176,6 +191,7 @@ public class RateSyncWorker extends Worker {
     @Override
     public Result doWork() {
         boolean isScheduled = getInputData().getBoolean(KEY_IS_SCHEDULED, false);
+        boolean isManual = getInputData().getBoolean(KEY_IS_MANUAL, false);
         try {
             CurrencyDbHelper db = CurrencyDbHelper.getInstance(getApplicationContext());
             String endpoint = db.isPublicRates() ? API_URL_PUBLIC : API_URL_COMMERCIAL;
@@ -201,6 +217,7 @@ public class RateSyncWorker extends Worker {
 
             JSONArray array = new JSONArray(sb.toString());
             long now = System.currentTimeMillis();
+            boolean anyRateChanged = false;
 
             for (int i = 0; i < array.length(); i++) {
                 JSONObject obj = array.getJSONObject(i);
@@ -210,14 +227,29 @@ public class RateSyncWorker extends Worker {
                 double sale = Double.parseDouble(obj.getString("sale"));
 
                 if ("USD".equals(ccy) || "EUR".equals(ccy)) {
-                    db.insertRate(ccy, baseCcy, buy, sale, now);
+                    RateRecord last = db.getLatestRate(ccy);
+                    boolean isUnchanged = last != null
+                            && Math.abs(last.buy - buy) < RATE_EPSILON
+                            && Math.abs(last.sale - sale) < RATE_EPSILON;
+
+                    if (!isUnchanged) {
+                        db.insertRate(ccy, baseCcy, buy, sale, now);
+                        anyRateChanged = true;
+                    }
                     evaluateAlerts(db, ccy, buy, sale);
                 }
             }
 
-            db.pruneOldRates(db.getHistoryDays());
-            NumbersWidgetProvider.updateAllWidgets(getApplicationContext());
-            GraphWidgetProvider.updateAllWidgets(getApplicationContext());
+            if (anyRateChanged) {
+                db.pruneOldRates(db.getHistoryDays());
+                NumbersWidgetProvider.updateAllWidgets(getApplicationContext());
+                GraphWidgetProvider.updateAllWidgets(getApplicationContext());
+            } else if (isManual) {
+                Context appCtx = getApplicationContext();
+                new Handler(Looper.getMainLooper()).post(() ->
+                        Toast.makeText(appCtx, R.string.toast_rates_unchanged, Toast.LENGTH_SHORT).show()
+                );
+            }
 
             if (isScheduled) {
                 scheduleWork(getApplicationContext(), db.getCheckPeriodMinutes());
@@ -268,10 +300,20 @@ public class RateSyncWorker extends Worker {
         String body = ctx.getString(R.string.notification_alert_body,
                 alert.ccy, typeLabel, currentRate, condLabel, alert.targetRate);
 
+        Intent openAppIntent = new Intent(ctx, MainActivity.class);
+        openAppIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent contentIntent = PendingIntent.getActivity(
+                ctx,
+                (int) alert.id,
+                openAppIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(ctx, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle(title)
                 .setContentText(body)
+                .setContentIntent(contentIntent)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true);
 

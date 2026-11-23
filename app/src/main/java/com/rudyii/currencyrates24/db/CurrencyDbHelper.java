@@ -113,6 +113,24 @@ public class CurrencyDbHelper extends SQLiteOpenHelper {
         getWritableDatabase().delete(TABLE_RATES, null, null);
     }
 
+    public RateRecord getLatestRate(String ccy) {
+        SQLiteDatabase db = getReadableDatabase();
+        try (Cursor c = db.query(TABLE_RATES, null, "ccy = ?", new String[]{ccy},
+                null, null, "timestamp DESC, id DESC", "1")) {
+            if (c.moveToFirst()) {
+                return new RateRecord(
+                        c.getLong(c.getColumnIndexOrThrow("id")),
+                        c.getString(c.getColumnIndexOrThrow("ccy")),
+                        c.getString(c.getColumnIndexOrThrow("base_ccy")),
+                        c.getDouble(c.getColumnIndexOrThrow("buy")),
+                        c.getDouble(c.getColumnIndexOrThrow("sale")),
+                        c.getLong(c.getColumnIndexOrThrow("timestamp"))
+                );
+            }
+        }
+        return null;
+    }
+
     public void insertRate(String ccy, String baseCcy, double buy, double sale, long timestamp) {
         SQLiteDatabase db = getWritableDatabase();
         ContentValues cv = new ContentValues();
@@ -133,7 +151,7 @@ public class CurrencyDbHelper extends SQLiteOpenHelper {
         List<RateRecord> list = new ArrayList<>();
         SQLiteDatabase db = getReadableDatabase();
         try (Cursor c = db.query(TABLE_RATES, null, "ccy = ?", new String[]{ccy},
-                null, null, "timestamp ASC")) {
+                null, null, "timestamp ASC, id ASC")) {
             while (c.moveToNext()) {
                 list.add(new RateRecord(
                         c.getLong(c.getColumnIndexOrThrow("id")),

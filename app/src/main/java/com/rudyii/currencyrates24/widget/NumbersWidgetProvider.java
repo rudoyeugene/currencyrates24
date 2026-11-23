@@ -7,6 +7,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.TypedValue;
 import android.view.View;
 import android.widget.RemoteViews;
 import android.widget.Toast;
@@ -30,6 +31,11 @@ public class NumbersWidgetProvider extends AppWidgetProvider {
     private static final int COLOR_UP = 0xFF4ADE80;
     private static final int COLOR_DOWN = 0xFFEF4444;
 
+    // Launcher width thresholds (dp):
+    // 2x1: ~110–179dp | 3x1: ~180–249dp | 4x1+: >= 250dp
+    private static final int WIDTH_3X1_DP = 180;
+    private static final int WIDTH_4X1_DP = 250;
+
     public static void updateAllWidgets(Context context) {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         int[] ids = manager.getAppWidgetIds(new ComponentName(context, NumbersWidgetProvider.class));
@@ -46,9 +52,9 @@ public class NumbersWidgetProvider extends AppWidgetProvider {
         }
 
         Bundle options = manager.getAppWidgetOptions(widgetId);
-        int minWidth = options != null ? options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 200) : 200;
-        int minHeight = options != null ? options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 100) : 100;
-        boolean isSmallerThan2x1 = (minWidth < 180) || (minHeight < 90);
+        int minWidth = options != null ? options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180) : 180;
+        boolean is4x1OrWider = minWidth >= WIDTH_4X1_DP;
+        boolean is3x1 = !is4x1OrWider && minWidth >= WIDTH_3X1_DP;
 
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_numbers);
 
@@ -64,8 +70,8 @@ public class NumbersWidgetProvider extends AppWidgetProvider {
         toggleIntent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId);
         PendingIntent togglePi = PendingIntent.getBroadcast(context, widgetId + 20000, toggleIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        views.setOnClickPendingIntent(R.id.tvPrimaryTitle, togglePi);
-        views.setOnClickPendingIntent(R.id.tvCompactTitle, togglePi);
+        views.setOnClickPendingIntent(R.id.tvWideTitle, togglePi);
+        views.setOnClickPendingIntent(R.id.tvStackedTitle, togglePi);
 
         // Manual refresh icon
         Intent refreshIntent = new Intent(context, NumbersWidgetProvider.class);
@@ -77,62 +83,90 @@ public class NumbersWidgetProvider extends AppWidgetProvider {
         List<RateRecord> history = db.getRatesForCurrency(ccy);
         int neutralColor = ContextCompat.getColor(context, R.color.text_secondary);
 
-        if (isSmallerThan2x1) {
-            views.setViewVisibility(R.id.llStandardNumbers, View.GONE);
-            views.setViewVisibility(R.id.llCompactNumbers, View.VISIBLE);
-            views.setTextViewText(R.id.tvCompactTitle, ccy + "/UAH ▾");
+        if (is4x1OrWider) {
+            views.setViewVisibility(R.id.llStackedNumbers, View.GONE);
+            views.setViewVisibility(R.id.llWideNumbers, View.VISIBLE);
+            views.setTextViewText(R.id.tvWideTitle, ccy + "/UAH ▾");
 
-            if (history == null || history.isEmpty()) {
-                views.setTextViewText(R.id.tvCompactBuyVal, "0.00");
-                views.setTextViewText(R.id.tvCompactSellVal, "0.00");
-            } else {
-                RateRecord latest = history.get(history.size() - 1);
-                views.setTextViewText(R.id.tvCompactBuyVal, String.format(Locale.US, "%.2f", latest.buy));
-                views.setTextViewText(R.id.tvCompactSellVal, String.format(Locale.US, "%.2f", latest.sale));
-            }
+            bindRates(views, history, neutralColor, true,
+                    R.id.tvWideBuyVal, R.id.tvWideSellVal,
+                    R.id.tvWideBuyDiff, R.id.tvWideSellDiff);
         } else {
-            views.setViewVisibility(R.id.llCompactNumbers, View.GONE);
-            views.setViewVisibility(R.id.llStandardNumbers, View.VISIBLE);
-            views.setTextViewText(R.id.tvPrimaryTitle, ccy + "/UAH ▾");
+            views.setViewVisibility(R.id.llWideNumbers, View.GONE);
+            views.setViewVisibility(R.id.llStackedNumbers, View.VISIBLE);
+            views.setTextViewText(R.id.tvStackedTitle, ccy + "/UAH ▾");
 
-            if (history == null || history.isEmpty()) {
-                views.setTextViewText(R.id.tvPrimaryBuyVal, "--.--");
-                views.setTextViewText(R.id.tvPrimarySellVal, "--.--");
-                views.setTextViewText(R.id.tvPrimaryBuyDiff, "• 0.00 (0.00%)");
-                views.setTextViewText(R.id.tvPrimarySellDiff, "• 0.00 (0.00%)");
-                views.setTextColor(R.id.tvPrimaryBuyDiff, neutralColor);
-                views.setTextColor(R.id.tvPrimarySellDiff, neutralColor);
-            } else {
-                RateRecord latest = history.get(history.size() - 1);
-                views.setTextViewText(R.id.tvPrimaryBuyVal, String.format(Locale.US, "%.2f", latest.buy));
-                views.setTextViewText(R.id.tvPrimarySellVal, String.format(Locale.US, "%.2f", latest.sale));
+            // Scale text slightly larger on 3x1 compared to 2x1
+            float titleSp = is3x1 ? 14f : 12.5f;
+            float labelSp = is3x1 ? 14f : 12.5f;
+            float valSp = is3x1 ? 21f : 18f;
+            float diffSp = is3x1 ? 12f : 11f;
 
-                if (history.size() == 1) {
-                    views.setTextViewText(R.id.tvPrimaryBuyDiff, "• 0.00 (0.00%)");
-                    views.setTextViewText(R.id.tvPrimarySellDiff, "• 0.00 (0.00%)");
-                    views.setTextColor(R.id.tvPrimaryBuyDiff, neutralColor);
-                    views.setTextColor(R.id.tvPrimarySellDiff, neutralColor);
-                } else {
-                    RateRecord prev = history.get(history.size() - 2);
-                    applyDeltaFormatting(views, R.id.tvPrimaryBuyDiff, latest.buy - prev.buy, prev.buy, neutralColor);
-                    applyDeltaFormatting(views, R.id.tvPrimarySellDiff, latest.sale - prev.sale, prev.sale, neutralColor);
-                }
-            }
+            views.setTextViewTextSize(R.id.tvStackedTitle, TypedValue.COMPLEX_UNIT_SP, titleSp);
+            views.setTextViewTextSize(R.id.tvStackedBuyLabel, TypedValue.COMPLEX_UNIT_SP, labelSp);
+            views.setTextViewTextSize(R.id.tvStackedSellLabel, TypedValue.COMPLEX_UNIT_SP, labelSp);
+            views.setTextViewTextSize(R.id.tvStackedBuyVal, TypedValue.COMPLEX_UNIT_SP, valSp);
+            views.setTextViewTextSize(R.id.tvStackedSellVal, TypedValue.COMPLEX_UNIT_SP, valSp);
+            views.setTextViewTextSize(R.id.tvStackedBuyDiff, TypedValue.COMPLEX_UNIT_SP, diffSp);
+            views.setTextViewTextSize(R.id.tvStackedSellDiff, TypedValue.COMPLEX_UNIT_SP, diffSp);
+
+            bindRates(views, history, neutralColor, false,
+                    R.id.tvStackedBuyVal, R.id.tvStackedSellVal,
+                    R.id.tvStackedBuyDiff, R.id.tvStackedSellDiff);
         }
 
         manager.updateAppWidget(widgetId, views);
     }
 
-    private static void applyDeltaFormatting(RemoteViews views, int viewId, double diff, double prevVal, int neutralColor) {
+    private static void bindRates(RemoteViews views, List<RateRecord> history, int neutralColor,
+                                  boolean includeAmountDiff,
+                                  int buyValId, int sellValId, int buyDiffId, int sellDiffId) {
+        String zeroDiff = includeAmountDiff ? "• 0.00 (0.00%)" : "• 0.00%";
+
+        if (history == null || history.isEmpty()) {
+            views.setTextViewText(buyValId, "--.--");
+            views.setTextViewText(sellValId, "--.--");
+            views.setTextViewText(buyDiffId, zeroDiff);
+            views.setTextViewText(sellDiffId, zeroDiff);
+            views.setTextColor(buyDiffId, neutralColor);
+            views.setTextColor(sellDiffId, neutralColor);
+            return;
+        }
+
+        RateRecord latest = history.get(history.size() - 1);
+        views.setTextViewText(buyValId, String.format(Locale.US, "%.2f", latest.buy));
+        views.setTextViewText(sellValId, String.format(Locale.US, "%.2f", latest.sale));
+
+        if (history.size() == 1) {
+            views.setTextViewText(buyDiffId, zeroDiff);
+            views.setTextViewText(sellDiffId, zeroDiff);
+            views.setTextColor(buyDiffId, neutralColor);
+            views.setTextColor(sellDiffId, neutralColor);
+            return;
+        }
+
+        RateRecord prev = history.get(history.size() - 2);
+        applyDeltaFormatting(views, buyDiffId, latest.buy - prev.buy, prev.buy, neutralColor, includeAmountDiff);
+        applyDeltaFormatting(views, sellDiffId, latest.sale - prev.sale, prev.sale, neutralColor, includeAmountDiff);
+    }
+
+    private static void applyDeltaFormatting(RemoteViews views, int viewId, double diff, double prevVal,
+                                             int neutralColor, boolean includeAmountDiff) {
         double pct = prevVal != 0 ? (diff / prevVal) * 100.0 : 0.0;
         if (diff > 0.0001) {
-            views.setTextViewText(viewId, String.format(Locale.US, "▲ %+.2f (%+.2f%%)", diff, pct));
+            String text = includeAmountDiff
+                    ? String.format(Locale.US, "▲ %+.2f (%+.2f%%)", diff, pct)
+                    : String.format(Locale.US, "▲ %+.2f%%", pct);
+            views.setTextViewText(viewId, text);
             views.setTextColor(viewId, COLOR_UP);
         } else if (diff < -0.0001) {
-            views.setTextViewText(viewId, String.format(Locale.US, "▼ %+.2f (%+.2f%%)", diff, pct));
+            String text = includeAmountDiff
+                    ? String.format(Locale.US, "▼ %+.2f (%+.2f%%)", diff, pct)
+                    : String.format(Locale.US, "▼ %+.2f%%", pct);
+            views.setTextViewText(viewId, text);
             views.setTextColor(viewId, COLOR_DOWN);
         } else {
-            views.setTextViewText(viewId, "• 0.00 (0.00%)");
+            views.setTextViewText(viewId, includeAmountDiff ? "• 0.00 (0.00%)" : "• 0.00%");
             views.setTextColor(viewId, neutralColor);
         }
     }
@@ -143,7 +177,7 @@ public class NumbersWidgetProvider extends AppWidgetProvider {
         String action = intent.getAction();
         if (ACTION_MANUAL_REFRESH.equals(action)) {
             Toast.makeText(context, R.string.toast_syncing_rates, Toast.LENGTH_SHORT).show();
-            RateSyncWorker.runImmediateSync(context);
+            RateSyncWorker.runImmediateSync(context, true);
         } else if (ACTION_TOGGLE_CURRENCY.equals(action)) {
             int widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
             if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {

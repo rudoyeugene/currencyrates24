@@ -91,7 +91,7 @@ public class GraphWidgetProvider extends AppWidgetProvider {
         String action = intent.getAction();
         if (ACTION_MANUAL_REFRESH.equals(action)) {
             Toast.makeText(context, R.string.toast_syncing_rates, Toast.LENGTH_SHORT).show();
-            RateSyncWorker.runImmediateSync(context);
+            RateSyncWorker.runImmediateSync(context, true);
         } else if (ACTION_TOGGLE_CURRENCY.equals(action)) {
             int widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
             if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {

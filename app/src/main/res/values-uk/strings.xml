@@ -18,6 +18,7 @@
     <string name="delta_full_format">Купівля: %1$.2f %2$s %3$+.2f (%4$+.2f%%) | Продаж: %5$.2f %6$s %7$+.2f (%8$+.2f%%)</string>
     <string name="btn_manage_alerts">Керування активними сповіщеннями</string>
     <string name="toast_syncing_rates">Оновлення курсів...</string>
+    <string name="toast_rates_unchanged">Курси не змінилися</string>
 
     <!-- Alerts Dialogs -->
     <string name="dialog_set_alert_title">Встановити сповіщення про курс</string>
