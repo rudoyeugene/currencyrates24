@@ -9,6 +9,7 @@ import android.util.AttributeSet;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewParent;
 import android.widget.OverScroller;
 
 import androidx.annotation.Nullable;
@@ -24,6 +25,13 @@ import java.util.Map;
 
 public class TrendCalendarView extends View {
 
+    private boolean monthChangedInGesture = false;
+
+    private static int getMondayFirstOffset(Calendar monthStart) {
+        int dow = monthStart.get(Calendar.DAY_OF_WEEK); // Sun=1, Mon=2..Sat=7
+        return (dow == Calendar.SUNDAY) ? 6 : (dow - Calendar.MONDAY);
+    }
+
     private final Map<String, DayTrend> dayTrends = new HashMap<>();
     private final Paint headerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint weekdayPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -31,18 +39,27 @@ public class TrendCalendarView extends View {
     private final Paint badgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint todayStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF cellRect = new RectF();
+
     private Calendar displayedMonth;
     private String todayKey;
     private float dragOffsetX = 0f;
+
+    private static String formatDateKey(Calendar cal) {
+        return String.format(Locale.US, "%04d-%02d-%02d",
+                cal.get(Calendar.YEAR),
+                cal.get(Calendar.MONTH) + 1,
+                cal.get(Calendar.DAY_OF_MONTH));
+    }
     private OverScroller scroller;
     private GestureDetector gestureDetector;
     private OnDayClickListener dayClickListener;
+
     private int colorUnchanged;
     private int colorWeak;
     private int colorStrong;
     private int colorTextPrimary;
     private int colorTextSecondary;
-    private float headerBottomY;
+
     private float gridTopY;
     private float cellWidth;
     private float cellHeight;
@@ -60,18 +77,6 @@ public class TrendCalendarView extends View {
     public TrendCalendarView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
         init(context);
-    }
-
-    private static int getMondayFirstOffset(Calendar monthStart) {
-        int dow = monthStart.get(Calendar.DAY_OF_WEEK); // Sun=1, Mon=2..Sat=7
-        return (dow == Calendar.SUNDAY) ? 6 : (dow - Calendar.MONDAY);
-    }
-
-    private static String formatDateKey(Calendar cal) {
-        return String.format(Locale.US, "%04d-%02d-%02d",
-                cal.get(Calendar.YEAR),
-                cal.get(Calendar.MONTH) + 1,
-                cal.get(Calendar.DAY_OF_MONTH));
     }
 
     private void init(Context context) {
@@ -114,11 +119,18 @@ public class TrendCalendarView extends View {
                 if (!scroller.isFinished()) {
                     scroller.abortAnimation();
                 }
+                monthChangedInGesture = false;
                 return true;
             }
 
             @Override
             public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+                if (Math.abs(distanceX) > Math.abs(distanceY)) {
+                    ViewParent parent = getParent();
+                    if (parent != null) {
+                        parent.requestDisallowInterceptTouchEvent(true);
+                    }
+                }
                 dragOffsetX -= distanceX;
                 invalidate();
                 return true;
@@ -126,11 +138,11 @@ public class TrendCalendarView extends View {
 
             @Override
             public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-                if (Math.abs(velocityX) > Math.abs(velocityY)) {
-                    if (velocityX < -300f) {
+                if (Math.abs(velocityX) > Math.abs(velocityY) && Math.abs(velocityX) > 200f) {
+                    if (velocityX < 0f) {
                         shiftMonth(1);
                         return true;
-                    } else if (velocityX > 300f) {
+                    } else {
                         shiftMonth(-1);
                         return true;
                     }
@@ -160,13 +172,17 @@ public class TrendCalendarView extends View {
     }
 
     public void shiftMonth(int deltaMonths) {
+        if (deltaMonths == 0) return;
+        monthChangedInGesture = true;
         displayedMonth.add(Calendar.MONTH, deltaMonths);
         displayedMonth.set(Calendar.DAY_OF_MONTH, 1);
-        animateResetOffset(deltaMonths > 0 ? getWidth() * 0.35f : -getWidth() * 0.35f);
+        float w = getWidth() > 0 ? getWidth() : 300f;
+        animateResetOffset(deltaMonths > 0 ? w * 0.35f : -w * 0.35f);
     }
 
     private void animateResetOffset(float startOffset) {
         dragOffsetX = startOffset;
+        scroller.abortAnimation();
         scroller.startScroll((int) dragOffsetX, 0, (int) -dragOffsetX, 0, 220);
         postInvalidateOnAnimation();
     }
@@ -185,14 +201,21 @@ public class TrendCalendarView extends View {
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         boolean handled = gestureDetector.onTouchEvent(event);
-        if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
-            float threshold = getWidth() * 0.22f;
-            if (dragOffsetX < -threshold) {
-                shiftMonth(1);
-            } else if (dragOffsetX > threshold) {
-                shiftMonth(-1);
-            } else if (dragOffsetX != 0f) {
-                animateResetOffset(dragOffsetX);
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            ViewParent parent = getParent();
+            if (parent != null) {
+                parent.requestDisallowInterceptTouchEvent(false);
+            }
+            if (!monthChangedInGesture) {
+                float threshold = getWidth() * 0.18f;
+                if (dragOffsetX < -threshold) {
+                    shiftMonth(1);
+                } else if (dragOffsetX > threshold) {
+                    shiftMonth(-1);
+                } else if (dragOffsetX != 0f) {
+                    animateResetOffset(dragOffsetX);
+                }
             }
         }
         return handled || super.onTouchEvent(event);
@@ -202,17 +225,17 @@ public class TrendCalendarView extends View {
         float w = getWidth();
         if (w <= 0) return;
 
-        // Header left/right month arrows
-        if (y <= headerBottomY) {
-            if (x < w * 0.25f) {
+        // Entire area above the day grid acts as the header bar for ◀ / ▶ month navigation
+        if (y < gridTopY) {
+            if (x < w * 0.35f) {
                 shiftMonth(-1);
-            } else if (x > w * 0.75f) {
+            } else if (x > w * 0.65f) {
                 shiftMonth(1);
             }
             return;
         }
 
-        if (y < gridTopY || cellWidth <= 0 || cellHeight <= 0) return;
+        if (cellWidth <= 0 || cellHeight <= 0) return;
 
         int col = (int) (x / cellWidth);
         int row = (int) ((y - gridTopY) / cellHeight);
@@ -240,16 +263,16 @@ public class TrendCalendarView extends View {
         if (w <= 0 || h <= 0) return;
 
         float density = getResources().getDisplayMetrics().density;
-        headerBottomY = 28f * density;
+        float headerBottomY = 30f * density;
         float weekdayRowY = headerBottomY + 16f * density;
         gridTopY = weekdayRowY + 8f * density;
 
-        // Month Header (< Month YYYY >)
+        // Month Header (◀ Month YYYY ▶)
         SimpleDateFormat monthFormat = new SimpleDateFormat("LLLL yyyy", Locale.getDefault());
         String rawTitle = monthFormat.format(displayedMonth.getTime());
         String monthTitle = rawTitle.substring(0, 1).toUpperCase(Locale.getDefault()) + rawTitle.substring(1);
 
-        float headerBaseline = 20f * density;
+        float headerBaseline = 21f * density;
         canvas.drawText("◀", w * 0.12f, headerBaseline, headerPaint);
         canvas.drawText(monthTitle, w * 0.5f + dragOffsetX * 0.35f, headerBaseline, headerPaint);
         canvas.drawText("▶", w * 0.88f, headerBaseline, headerPaint);
