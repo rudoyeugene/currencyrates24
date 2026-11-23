@@ -52,8 +52,11 @@
         <item>12 годин (00:01, 12:01)</item>
     </string-array>
 
-    <string name="public_rates_title">Публічні курси</string>
-    <string name="public_rates_desc">Увімкнено: готівкові курси відділень. Вимкнено: комерційні безготівкові курси</string>
+    <string name="tracked_currencies_title">Відстежувані валюти</string>
+    <string name="tracked_currencies_desc">Оберіть валюти для архіву курсів, трендів та віджетів</string>
+    <string name="btn_select_currencies">Обрати валюти</string>
+    <string name="dialog_select_currencies_title">Оберіть відстежувані валюти</string>
+    <string name="toast_min_one_currency">Оберіть хоча б одну валюту</string>
 
     <string name="history_retention_title">Зберігання історії (днів)</string>
     <string name="history_retention_desc">Кількість днів зберігання історії курсів (за замовчуванням 28)</string>
@@ -79,16 +82,41 @@
 
     <!-- Notifications & Worker -->
     <string name="notification_channel_name">Сповіщення про курси валют</string>
-    <string name="notification_channel_desc">Сповіщення, коли $ або € досягає заданого курсу</string>
+    <string name="notification_channel_desc">Сповіщення, коли відстежувана валюта досягає заданого курсу</string>
     <string name="notification_alert_title">Спрацювало сповіщення: %1$s (%2$s)</string>
     <string name="notification_alert_body">Курс %1$s (%2$s) зараз %3$.2f ₴ (Ціль: %4$s %5$.2f)</string>
 
     <!-- Widgets -->
     <string name="widget_numbers_label">Курси валют (Цифри)</string>
-    <string name="widget_graph_label">Курси валют (Графік за 7 днів)</string>
+    <string name="widget_graph_label">Курси валют (График за 7 днів)</string>
     <string name="widget_buy">Купівля</string>
     <string name="widget_sell">Продаж</string>
     <string name="cd_refresh_rates">Оновити курси</string>
     <string name="cd_trend_graph">Графік динаміки курсу за 7 днів</string>
     <string name="alert_fixed_target_format">Валюта: %1$s  |  Тип: %2$s</string>
+    <string name="widget_config_currency_label">Відстежувана валюта:</string>
+    <string name="widget_config_save">Зберегти віджет</string>
+
+    <!-- Main Activity (Phase 2) -->
+    <string name="graph_section_title">Огляд тренду гривні</string>
+    <string name="legend_multi_trend">● USD   ● EUR   ● Загальний UAH</string>
+    <string name="calendar_section_title">Календар тренду гривні</string>
+    <string name="calendar_legend">● Без змін   ● Слабшає   ● Міцнішає</string>
+    <string name="trend_summary_format">USD: %1$.2f | EUR: %2$.2f | Загальний UAH: %3$s %4$+.2f%%</string>
+    <string-array name="weekday_short_labels">
+        <item>Пн</item>
+        <item>Вт</item>
+        <item>Ср</item>
+        <item>Чт</item>
+        <item>Пт</item>
+        <item>Сб</item>
+        <item>Нд</item>
+    </string-array>
+
+    <!-- Day Detail Modal (Phase 3) -->
+    <string name="modal_swipe_hint">Гортайте вліво або вправо для зміни валюти (%1$d / %2$d)</string>
+    <string name="modal_rate_unavailable">Немає даних для %1$s за цю дату</string>
+    <string name="btn_watch">Стежити</string>
+    <string name="modal_watch_type_label">Тип курсу для відстеження:</string>
+    <string name="toast_using_live_fallback">Архів за сьогодні недоступний; завантажено поточний комерційний курс</string>
 </resources>

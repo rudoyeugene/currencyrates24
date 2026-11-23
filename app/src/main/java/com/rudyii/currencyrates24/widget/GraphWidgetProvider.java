@@ -36,9 +36,10 @@ public class GraphWidgetProvider extends AppWidgetProvider {
 
     public static void updateSingleWidget(Context context, AppWidgetManager manager, int widgetId) {
         CurrencyDbHelper db = CurrencyDbHelper.getInstance(context);
-        String ccy = db.getSetting("widget_ccy_" + widgetId, "USD");
-        if (!"USD".equals(ccy) && !"EUR".equals(ccy)) {
-            ccy = "USD";
+        List<String> tracked = db.getTrackedCurrencies();
+        String ccy = db.getSetting("widget_ccy_" + widgetId, tracked.get(0));
+        if (!CurrencyDbHelper.SUPPORTED_CURRENCIES.contains(ccy)) {
+            ccy = tracked.get(0);
         }
 
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_graph);
@@ -97,7 +98,7 @@ public class GraphWidgetProvider extends AppWidgetProvider {
             if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
                 CurrencyDbHelper db = CurrencyDbHelper.getInstance(context);
                 String current = db.getSetting("widget_ccy_" + widgetId, "USD");
-                String next = "USD".equals(current) ? "EUR" : "USD";
+                String next = db.getNextTrackedCurrency(current);
                 db.saveSetting("widget_ccy_" + widgetId, next);
                 updateSingleWidget(context, AppWidgetManager.getInstance(context), widgetId);
             }

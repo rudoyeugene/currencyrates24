@@ -12,7 +12,10 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.rudyii.currencyrates24.R;
 import com.rudyii.currencyrates24.db.CurrencyDbHelper;
+
+import java.util.List;
 
 public class WidgetConfigureActivity extends AppCompatActivity {
 
@@ -34,27 +37,32 @@ public class WidgetConfigureActivity extends AppCompatActivity {
         }
 
         CurrencyDbHelper db = CurrencyDbHelper.getInstance(this);
-        String savedCcy = db.getSetting("widget_ccy_" + appWidgetId, "USD");
+        List<String> tracked = db.getTrackedCurrencies();
+        String savedCcy = db.getSetting("widget_ccy_" + appWidgetId, tracked.get(0));
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(48, 48, 48, 48);
 
         TextView tvCcy = new TextView(this);
-        tvCcy.setText("Tracked Currency:");
+        tvCcy.setText(R.string.widget_config_currency_label);
         layout.addView(tvCcy);
 
-        String[] ccyKeys = {"USD", "EUR"};
-        String[] ccyLabels = {"USD / UAH", "EUR / UAH"};
+        String[] ccyKeys = tracked.toArray(new String[0]);
+        String[] ccyLabels = new String[ccyKeys.length];
+        for (int i = 0; i < ccyKeys.length; i++) {
+            ccyLabels[i] = ccyKeys[i] + " / UAH";
+        }
         Spinner spCcy = new Spinner(this);
         spCcy.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, ccyLabels));
-        if ("EUR".equals(savedCcy)) {
-            spCcy.setSelection(1);
+        int selectedIdx = tracked.indexOf(savedCcy);
+        if (selectedIdx >= 0) {
+            spCcy.setSelection(selectedIdx);
         }
         layout.addView(spCcy);
 
         Button btnConfirm = new Button(this);
-        btnConfirm.setText("Save Widget");
+        btnConfirm.setText(R.string.widget_config_save);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);

@@ -52,8 +52,11 @@
         <item>12 часов (00:01, 12:01)</item>
     </string-array>
 
-    <string name="public_rates_title">Публичные курсы</string>
-    <string name="public_rates_desc">Включено: наличные курсы отделений. Выключено: коммерческие безналичные курсы</string>
+    <string name="tracked_currencies_title">Отслеживаемые валюты</string>
+    <string name="tracked_currencies_desc">Выберите валюты для архива курсов, трендов и виджетов</string>
+    <string name="btn_select_currencies">Выбрать валюты</string>
+    <string name="dialog_select_currencies_title">Выберите отслеживаемые валюты</string>
+    <string name="toast_min_one_currency">Выберите хотя бы одну валюту</string>
 
     <string name="history_retention_title">Хранение истории (дней)</string>
     <string name="history_retention_desc">Количество дней хранения истории курсов (по умолчанию 28)</string>
@@ -79,7 +82,7 @@
 
     <!-- Notifications & Worker -->
     <string name="notification_channel_name">Уведомления о курсах валют</string>
-    <string name="notification_channel_desc">Уведомления, когда $ или € достигает заданного курса</string>
+    <string name="notification_channel_desc">Уведомления, когда отслеживаемая валюта достигает заданного курса</string>
     <string name="notification_alert_title">Сработало уведомление: %1$s (%2$s)</string>
     <string name="notification_alert_body">Курс %1$s (%2$s) сейчас %3$.2f ₴ (Цель: %4$s %5$.2f)</string>
 
@@ -91,4 +94,29 @@
     <string name="cd_refresh_rates">Обновить курсы</string>
     <string name="cd_trend_graph">График динамики курса за 7 дней</string>
     <string name="alert_fixed_target_format">Валюта: %1$s  |  Тип: %2$s</string>
+    <string name="widget_config_currency_label">Отслеживаемая валюта:</string>
+    <string name="widget_config_save">Сохранить виджет</string>
+
+    <!-- Main Activity (Phase 2) -->
+    <string name="graph_section_title">Обзор тренда гривны</string>
+    <string name="legend_multi_trend">● USD   ● EUR   ● Общий UAH</string>
+    <string name="calendar_section_title">Календарь тренда гривны</string>
+    <string name="calendar_legend">● Без изменений   ● Ослабевает   ● Укрепляется</string>
+    <string name="trend_summary_format">USD: %1$.2f | EUR: %2$.2f | Общий UAH: %3$s %4$+.2f%%</string>
+    <string-array name="weekday_short_labels">
+        <item>Пн</item>
+        <item>Вт</item>
+        <item>Ср</item>
+        <item>Чт</item>
+        <item>Пт</item>
+        <item>Сб</item>
+        <item>Вс</item>
+    </string-array>
+
+    <!-- Day Detail Modal (Phase 3) -->
+    <string name="modal_swipe_hint">Свайпайте влево или вправо для смены валюты (%1$d / %2$d)</string>
+    <string name="modal_rate_unavailable">Нет данных для %1$s за эту дату</string>
+    <string name="btn_watch">Следить</string>
+    <string name="modal_watch_type_label">Тип курса для отслеживания:</string>
+    <string name="toast_using_live_fallback">Архив за сегодня недоступен; загружен текущий коммерческий курс</string>
 </resources>
