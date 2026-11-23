@@ -52,8 +52,11 @@
         <item>12 hours (00:01, 12:01)</item>
     </string-array>
 
-    <string name="public_rates_title">Public rates</string>
-    <string name="public_rates_desc">Checked: public cash rates. Unchecked: commercial non-cash rates</string>
+    <string name="tracked_currencies_title">Tracked Currencies</string>
+    <string name="tracked_currencies_desc">Select currencies to track in archive history, trends, and widgets</string>
+    <string name="btn_select_currencies">Select Currencies</string>
+    <string name="dialog_select_currencies_title">Select Tracked Currencies</string>
+    <string name="toast_min_one_currency">Select at least one currency</string>
 
     <string name="history_retention_title">History Retention (Days)</string>
     <string name="history_retention_desc">Number of days to keep rate history (default 28)</string>
@@ -79,7 +82,7 @@
 
     <!-- Notifications & Worker -->
     <string name="notification_channel_name">Currency Rate Alerts</string>
-    <string name="notification_channel_desc">Alerts when $ or € crosses your target rate</string>
+    <string name="notification_channel_desc">Alerts when a tracked currency crosses your target rate</string>
     <string name="notification_alert_title">%1$s %2$s Alert Triggered</string>
     <string name="notification_alert_body">%1$s %2$s rate is now %3$.2f ₴ (Target: %4$s %5$.2f)</string>
 
@@ -91,4 +94,29 @@
     <string name="cd_refresh_rates">Refresh rates</string>
     <string name="cd_trend_graph">Currency 7-day trend graph</string>
     <string name="alert_fixed_target_format">Currency: %1$s  |  Type: %2$s</string>
+    <string name="widget_config_currency_label">Tracked Currency:</string>
+    <string name="widget_config_save">Save Widget</string>
+
+    <!-- Main Activity (Phase 2) -->
+    <string name="graph_section_title">UAH Trend Overview</string>
+    <string name="legend_multi_trend">● USD   ● EUR   ● General UAH</string>
+    <string name="calendar_section_title">Daily UAH Trend Calendar</string>
+    <string name="calendar_legend">● Unchanged   ● UAH Weak   ● UAH Strong</string>
+    <string name="trend_summary_format">USD: %1$.2f | EUR: %2$.2f | General UAH: %3$s %4$+.2f%%</string>
+    <string-array name="weekday_short_labels">
+        <item>Mon</item>
+        <item>Tue</item>
+        <item>Wed</item>
+        <item>Thu</item>
+        <item>Fri</item>
+        <item>Sat</item>
+        <item>Sun</item>
+    </string-array>
+
+    <!-- Day Detail Modal (Phase 3) -->
+    <string name="modal_swipe_hint">Swipe left or right to switch currency (%1$d / %2$d)</string>
+    <string name="modal_rate_unavailable">No data for %1$s on this date</string>
+    <string name="btn_watch">Watch</string>
+    <string name="modal_watch_type_label">Rate type to watch:</string>
+    <string name="toast_using_live_fallback">Archive unavailable for today; loaded live commercial rates</string>
 </resources>

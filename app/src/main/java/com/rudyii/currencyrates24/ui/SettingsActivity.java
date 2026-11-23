@@ -1,5 +1,6 @@
 package com.rudyii.currencyrates24.ui;
 
+import android.app.AlertDialog;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
@@ -26,7 +27,6 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.google.android.material.appbar.MaterialToolbar;
-import com.google.android.material.checkbox.MaterialCheckBox;
 import com.rudyii.currencyrates24.CurrencyApp;
 import com.rudyii.currencyrates24.R;
 import com.rudyii.currencyrates24.db.CurrencyDbHelper;
@@ -36,23 +36,28 @@ import com.rudyii.currencyrates24.worker.RateSyncWorker;
 
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 public class SettingsActivity extends AppCompatActivity {
+
+    public static final String KEY_PENDING_SETTINGS_RESYNC = "pending_settings_resync";
 
     private static final int[] INTERVAL_MINUTES = {15, 30, 60, 180, 360, 480, 720};
     private static final String[] THEME_KEYS = {"SYSTEM", "LIGHT", "DARK"};
 
     private CurrencyDbHelper db;
     private Spinner spRefreshInterval;
-    private MaterialCheckBox cbPublicRates;
+    private TextView tvTrackedCurrenciesSummary;
     private EditText etHistoryDays;
     private Spinner spThemeMode;
     private TextView tvChannelStatus;
 
     private int savedPeriodMinutes;
-    private boolean savedPublicRates;
+    private List<String> savedTrackedCurrencies;
+    private List<String> selectedTrackedCurrencies;
     private int savedHistoryDays;
     private String savedThemeMode;
 
@@ -83,7 +88,7 @@ public class SettingsActivity extends AppCompatActivity {
         TextView tvPeriodLabel = findViewById(R.id.tvPeriodLabel);
         TextView tvPeriodScheduleHint = findViewById(R.id.tvPeriodScheduleHint);
         spRefreshInterval = findViewById(R.id.spRefreshInterval);
-        cbPublicRates = findViewById(R.id.cbPublicRates);
+        tvTrackedCurrenciesSummary = findViewById(R.id.tvTrackedCurrenciesSummary);
         etHistoryDays = findViewById(R.id.etHistoryDays);
         spThemeMode = findViewById(R.id.spThemeMode);
         tvChannelStatus = findViewById(R.id.tvChannelStatus);
@@ -125,8 +130,11 @@ public class SettingsActivity extends AppCompatActivity {
             }
         });
 
-        savedPublicRates = db.isPublicRates();
-        cbPublicRates.setChecked(savedPublicRates);
+        savedTrackedCurrencies = new ArrayList<>(db.getTrackedCurrencies());
+        selectedTrackedCurrencies = new ArrayList<>(savedTrackedCurrencies);
+        updateTrackedCurrenciesSummary();
+
+        findViewById(R.id.btnSelectCurrencies).setOnClickListener(v -> showTrackedCurrenciesDialog());
 
         savedHistoryDays = db.getHistoryDays();
         etHistoryDays.setText(String.valueOf(savedHistoryDays));
@@ -150,6 +158,44 @@ public class SettingsActivity extends AppCompatActivity {
         }
     }
 
+    private void showTrackedCurrenciesDialog() {
+        List<String> all = CurrencyDbHelper.SUPPORTED_CURRENCIES;
+        String[] items = all.toArray(new String[0]);
+        boolean[] checked = new boolean[items.length];
+        for (int i = 0; i < items.length; i++) {
+            checked[i] = selectedTrackedCurrencies.contains(items[i]);
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.dialog_select_currencies_title)
+                .setMultiChoiceItems(items, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
+                .setPositiveButton(R.string.btn_save, (dialog, which) -> {
+                    List<String> updated = new ArrayList<>();
+                    for (int i = 0; i < items.length; i++) {
+                        if (checked[i]) {
+                            updated.add(items[i]);
+                        }
+                    }
+                    if (updated.isEmpty()) {
+                        Toast.makeText(this, R.string.toast_min_one_currency, Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    selectedTrackedCurrencies = updated;
+                    updateTrackedCurrenciesSummary();
+                })
+                .setNegativeButton(R.string.btn_cancel, null)
+                .show();
+    }
+
+    private void updateTrackedCurrenciesSummary() {
+        StringBuilder sb = new StringBuilder();
+        for (String c : selectedTrackedCurrencies) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(c);
+        }
+        tvTrackedCurrenciesSummary.setText(sb.toString());
+    }
+
     @Override
     protected void onPause() {
         super.onPause();
@@ -160,7 +206,6 @@ public class SettingsActivity extends AppCompatActivity {
         if (db == null || spRefreshInterval == null) return;
 
         int chosenMinutes = INTERVAL_MINUTES[spRefreshInterval.getSelectedItemPosition()];
-        boolean chosenPublicRates = cbPublicRates.isChecked();
         int chosenHistoryDays = savedHistoryDays;
         try {
             String rawDays = etHistoryDays.getText().toString().trim();
@@ -172,29 +217,33 @@ public class SettingsActivity extends AppCompatActivity {
         String chosenTheme = THEME_KEYS[spThemeMode.getSelectedItemPosition()];
 
         boolean periodChanged = chosenMinutes != savedPeriodMinutes;
-        boolean publicRatesChanged = chosenPublicRates != savedPublicRates;
+        boolean currenciesChanged = !selectedTrackedCurrencies.equals(savedTrackedCurrencies);
         boolean historyChanged = chosenHistoryDays != savedHistoryDays;
         boolean themeChanged = !chosenTheme.equals(savedThemeMode);
 
-        if (!periodChanged && !publicRatesChanged && !historyChanged && !themeChanged) {
+        if (!periodChanged && !currenciesChanged && !historyChanged && !themeChanged) {
             return;
         }
 
+        int previousHistoryDays = savedHistoryDays;
+
         db.saveSetting("check_period_minutes", String.valueOf(chosenMinutes));
-        db.saveSetting("public_rates", String.valueOf(chosenPublicRates));
+        db.setTrackedCurrencies(selectedTrackedCurrencies);
         db.saveSetting("history_days", String.valueOf(chosenHistoryDays));
         db.saveSetting("theme_mode", chosenTheme);
 
         savedPeriodMinutes = chosenMinutes;
-        savedPublicRates = chosenPublicRates;
+        savedTrackedCurrencies = new ArrayList<>(selectedTrackedCurrencies);
         savedHistoryDays = chosenHistoryDays;
         savedThemeMode = chosenTheme;
 
-        if (publicRatesChanged) {
-            db.clearRates();
-            RateSyncWorker.runImmediateSync(this);
-        } else if (historyChanged) {
+        if (chosenHistoryDays < previousHistoryDays) {
             db.pruneOldRates(chosenHistoryDays);
+        }
+
+        if (currenciesChanged || chosenHistoryDays > previousHistoryDays) {
+            db.saveSetting(KEY_PENDING_SETTINGS_RESYNC, "true");
+            RateSyncWorker.runImmediateSync(this, false);
         }
 
         if (periodChanged) {

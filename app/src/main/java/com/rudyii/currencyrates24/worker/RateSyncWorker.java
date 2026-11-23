@@ -35,22 +35,165 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 public class RateSyncWorker extends Worker {
 
     public static final String CHANNEL_ID = "currency_alerts_channel";
-    private static final String API_URL_PUBLIC = "https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=5";
-    private static final String API_URL_COMMERCIAL = "https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=11";
+
+    private static final String ARCHIVE_API_BASE = "https://api.privatbank.ua/p24api/exchange_rates?date=";
+    public static final String PROGRESS_DAY_STAMP = "progress_day_stamp";
     private static final String SCHEDULED_WORK_NAME = "PrivatCurrencyAlignedSync";
-    private static final String IMMEDIATE_WORK_NAME = "PrivatCurrencyImmediateSync";
+    public static final String IMMEDIATE_WORK_NAME = "PrivatCurrencyImmediateSync";
+    private static final String FALLBACK_TODAY_API = "https://api.privatbank.ua/p24api/pubinfo?exchange&json&coursid=11";
     private static final String KEY_IS_SCHEDULED = "is_scheduled";
     private static final String KEY_IS_MANUAL = "is_manual";
     private static final double RATE_EPSILON = 0.0001;
+
+    @NonNull
+    @Override
+    public Result doWork() {
+        boolean isScheduled = getInputData().getBoolean(KEY_IS_SCHEDULED, false);
+        boolean isManual = getInputData().getBoolean(KEY_IS_MANUAL, false);
+        try {
+            CurrencyDbHelper db = CurrencyDbHelper.getInstance(getApplicationContext());
+            int historyDays = Math.max(1, db.getHistoryDays());
+
+            // Always ensure USD and EUR are fetched alongside any additional user-selected currencies
+            Set<String> currenciesToFetch = new LinkedHashSet<>();
+            currenciesToFetch.add("USD");
+            currenciesToFetch.add("EUR");
+            currenciesToFetch.addAll(db.getTrackedCurrencies());
+
+            Set<String> completeStoredDates = db.getCompleteStoredDates(currenciesToFetch);
+            SimpleDateFormat apiDateFormat = new SimpleDateFormat("dd.MM.yyyy", Locale.US);
+            SimpleDateFormat dbDateKeyFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+
+            boolean anyTodayChanged = false;
+            boolean anyBackfilled = false;
+            boolean usedTodayFallback = false;
+            int successfulCalls = 0;
+
+            // Iterate chronologically from oldest day in retention window to today
+            for (int daysAgo = historyDays - 1; daysAgo >= 0; daysAgo--) {
+                if (isStopped()) break;
+
+                boolean isToday = (daysAgo == 0);
+                Calendar targetCal = Calendar.getInstance();
+                targetCal.add(Calendar.DAY_OF_YEAR, -daysAgo);
+
+                String dbDayKey = dbDateKeyFormat.format(targetCal.getTime());
+                if (!isToday && completeStoredDates.contains(dbDayKey)) {
+                    continue;
+                }
+
+                long recordTimestamp;
+                if (isToday) {
+                    recordTimestamp = System.currentTimeMillis();
+                } else {
+                    targetCal.set(Calendar.HOUR_OF_DAY, 12);
+                    targetCal.set(Calendar.MINUTE, 0);
+                    targetCal.set(Calendar.SECOND, 0);
+                    targetCal.set(Calendar.MILLISECOND, 0);
+                    recordTimestamp = targetCal.getTimeInMillis();
+                }
+
+                String apiDateStr = apiDateFormat.format(targetCal.getTime());
+                List<ParsedRateItem> parsedItems = parseArchiveRates(
+                        fetchUrl(ARCHIVE_API_BASE + apiDateStr),
+                        apiDateStr,
+                        currenciesToFetch
+                );
+
+                // For today: if archive API has no data yet or failed, fallback to pubinfo?exchange&json&coursid=11
+                if (isToday && parsedItems.isEmpty()) {
+                    parsedItems = parsePubinfoFallbackRates(fetchUrl(FALLBACK_TODAY_API), currenciesToFetch);
+                    if (!parsedItems.isEmpty()) {
+                        usedTodayFallback = true;
+                    }
+                }
+
+                if (parsedItems.isEmpty()) {
+                    if (isToday && successfulCalls == 0) {
+                        return isScheduled ? Result.retry() : Result.failure();
+                    }
+                    continue;
+                }
+                successfulCalls++;
+
+                boolean dayInserted = false;
+                for (ParsedRateItem item : parsedItems) {
+                    Set<String> ccyStoredDates = db.getCompleteStoredDates(Collections.singleton(item.ccy));
+                    boolean hasRecordForDay = ccyStoredDates.contains(dbDayKey);
+
+                    if (isToday) {
+                        RateRecord last = db.getLatestRate(item.ccy);
+                        boolean isRateUnchanged = last != null
+                                && Math.abs(last.buy - item.buy) < RATE_EPSILON
+                                && Math.abs(last.sale - item.sale) < RATE_EPSILON;
+
+                        // Ensure today always gets a row if missing for today, or if today's rate changed
+                        if (!hasRecordForDay || !isRateUnchanged) {
+                            db.insertRate(item.ccy, item.baseCcy, item.buy, item.sale, recordTimestamp);
+                            anyTodayChanged = true;
+                            dayInserted = true;
+                        }
+                        evaluateAlerts(db, item.ccy, item.buy, item.sale);
+                    } else if (!hasRecordForDay) {
+                        db.insertRate(item.ccy, item.baseCcy, item.buy, item.sale, recordTimestamp);
+                        anyBackfilled = true;
+                        dayInserted = true;
+                    }
+                }
+
+                if (dayInserted) {
+                    setProgressAsync(new Data.Builder()
+                            .putString(PROGRESS_DAY_STAMP, dbDayKey)
+                            .build());
+                }
+            }
+
+            if (anyTodayChanged || anyBackfilled) {
+                db.pruneOldRates(historyDays);
+                NumbersWidgetProvider.updateAllWidgets(getApplicationContext());
+                GraphWidgetProvider.updateAllWidgets(getApplicationContext());
+
+                if (isManual && usedTodayFallback) {
+                    Context appCtx = getApplicationContext();
+                    new Handler(Looper.getMainLooper()).post(() ->
+                            Toast.makeText(appCtx, R.string.toast_using_live_fallback, Toast.LENGTH_SHORT).show()
+                    );
+                }
+            } else if (isManual) {
+                Context appCtx = getApplicationContext();
+                new Handler(Looper.getMainLooper()).post(() ->
+                        Toast.makeText(appCtx, R.string.toast_rates_unchanged, Toast.LENGTH_SHORT).show()
+                );
+            }
+
+            if (isScheduled) {
+                scheduleWork(getApplicationContext(), db.getCheckPeriodMinutes());
+            }
+
+            return Result.success();
+        } catch (Exception e) {
+            e.printStackTrace();
+            if (isScheduled) {
+                scheduleWork(getApplicationContext());
+                return Result.retry();
+            }
+            return Result.failure();
+        }
+    }
 
     public RateSyncWorker(@NonNull Context context, @NonNull WorkerParameters params) {
         super(context, params);
@@ -162,7 +305,7 @@ public class RateSyncWorker extends Worker {
 
         if (period < 60) {
             int currentMin = cal.get(Calendar.MINUTE);
-            int slot = ((currentMin - 1) / period) * period + 1;
+            int slot = ((currentMin - 1) / period) * period + 5;
             if (currentMin < 1) {
                 slot = 1 - period;
             }
@@ -187,23 +330,92 @@ public class RateSyncWorker extends Worker {
         }
     }
 
-    @NonNull
-    @Override
-    public Result doWork() {
-        boolean isScheduled = getInputData().getBoolean(KEY_IS_SCHEDULED, false);
-        boolean isManual = getInputData().getBoolean(KEY_IS_MANUAL, false);
-        try {
-            CurrencyDbHelper db = CurrencyDbHelper.getInstance(getApplicationContext());
-            String endpoint = db.isPublicRates() ? API_URL_PUBLIC : API_URL_COMMERCIAL;
+    private static String normalizeCurrencyCode(String rawCode) {
+        if ("PLZ".equals(rawCode)) {
+            return "PLN";
+        }
+        return rawCode;
+    }
 
-            URL url = new URL(endpoint);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    private static double extractRate(JSONObject obj, String primaryKey, String fallbackKey) {
+        double val = obj.optDouble(primaryKey, 0.0);
+        if (Double.isNaN(val) || val <= 0.0) {
+            val = obj.optDouble(fallbackKey, 0.0);
+        }
+        return Double.isNaN(val) ? 0.0 : val;
+    }
+
+    private List<ParsedRateItem> parseArchiveRates(String jsonStr, String expectedDateStr, Set<String> allowedCurrencies) {
+        List<ParsedRateItem> items = new ArrayList<>();
+        if (jsonStr == null || jsonStr.trim().isEmpty()) {
+            return items;
+        }
+        try {
+            JSONObject root = new JSONObject(jsonStr);
+            String returnedDate = root.optString("date", "").trim();
+            if (!returnedDate.isEmpty() && !returnedDate.equals(expectedDateStr)) {
+                return items;
+            }
+            JSONArray ratesArray = root.optJSONArray("exchangeRate");
+            if (ratesArray == null || ratesArray.length() == 0) {
+                return items;
+            }
+            for (int i = 0; i < ratesArray.length(); i++) {
+                JSONObject obj = ratesArray.getJSONObject(i);
+                String rawCcy = obj.optString("currency", "").toUpperCase(Locale.US);
+                String ccy = normalizeCurrencyCode(rawCcy);
+                if (!allowedCurrencies.contains(ccy)) {
+                    continue;
+                }
+                String baseCcy = obj.optString("baseCurrency", "UAH").toUpperCase(Locale.US);
+                double buy = extractRate(obj, "purchaseRateNB", "purchaseRate");
+                double sale = extractRate(obj, "saleRate", "saleRateNB");
+                if (buy > 0.0 && sale > 0.0) {
+                    items.add(new ParsedRateItem(ccy, baseCcy, buy, sale));
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return items;
+    }
+
+    private List<ParsedRateItem> parsePubinfoFallbackRates(String jsonStr, Set<String> allowedCurrencies) {
+        List<ParsedRateItem> items = new ArrayList<>();
+        if (jsonStr == null || jsonStr.trim().isEmpty()) {
+            return items;
+        }
+        try {
+            JSONArray array = new JSONArray(jsonStr);
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject obj = array.getJSONObject(i);
+                String rawCcy = obj.optString("ccy", "").toUpperCase(Locale.US);
+                String ccy = normalizeCurrencyCode(rawCcy);
+                if (!allowedCurrencies.contains(ccy)) {
+                    continue;
+                }
+                String baseCcy = obj.optString("base_ccy", "UAH").toUpperCase(Locale.US);
+                double buy = Double.parseDouble(obj.optString("buy", "0"));
+                double sale = Double.parseDouble(obj.optString("sale", "0"));
+                if (buy > 0.0 && sale > 0.0) {
+                    items.add(new ParsedRateItem(ccy, baseCcy, buy, sale));
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return items;
+    }
+
+    private String fetchUrl(String urlString) {
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL(urlString);
+            conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(10000);
 
             if (conn.getResponseCode() != 200) {
-                return isScheduled ? Result.retry() : Result.failure();
+                return null;
             }
 
             BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
@@ -213,56 +425,27 @@ public class RateSyncWorker extends Worker {
                 sb.append(line);
             }
             reader.close();
-            conn.disconnect();
-
-            JSONArray array = new JSONArray(sb.toString());
-            long now = System.currentTimeMillis();
-            boolean anyRateChanged = false;
-
-            for (int i = 0; i < array.length(); i++) {
-                JSONObject obj = array.getJSONObject(i);
-                String ccy = obj.getString("ccy");
-                String baseCcy = obj.getString("base_ccy");
-                double buy = Double.parseDouble(obj.getString("buy"));
-                double sale = Double.parseDouble(obj.getString("sale"));
-
-                if ("USD".equals(ccy) || "EUR".equals(ccy)) {
-                    RateRecord last = db.getLatestRate(ccy);
-                    boolean isUnchanged = last != null
-                            && Math.abs(last.buy - buy) < RATE_EPSILON
-                            && Math.abs(last.sale - sale) < RATE_EPSILON;
-
-                    if (!isUnchanged) {
-                        db.insertRate(ccy, baseCcy, buy, sale, now);
-                        anyRateChanged = true;
-                    }
-                    evaluateAlerts(db, ccy, buy, sale);
-                }
-            }
-
-            if (anyRateChanged) {
-                db.pruneOldRates(db.getHistoryDays());
-                NumbersWidgetProvider.updateAllWidgets(getApplicationContext());
-                GraphWidgetProvider.updateAllWidgets(getApplicationContext());
-            } else if (isManual) {
-                Context appCtx = getApplicationContext();
-                new Handler(Looper.getMainLooper()).post(() ->
-                        Toast.makeText(appCtx, R.string.toast_rates_unchanged, Toast.LENGTH_SHORT).show()
-                );
-            }
-
-            if (isScheduled) {
-                scheduleWork(getApplicationContext(), db.getCheckPeriodMinutes());
-            }
-
-            return Result.success();
+            return sb.toString();
         } catch (Exception e) {
-            e.printStackTrace();
-            if (isScheduled) {
-                scheduleWork(getApplicationContext());
-                return Result.retry();
+            return null;
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
             }
-            return Result.failure();
+        }
+    }
+
+    private static class ParsedRateItem {
+        final String ccy;
+        final String baseCcy;
+        final double buy;
+        final double sale;
+
+        ParsedRateItem(String ccy, String baseCcy, double buy, double sale) {
+            this.ccy = ccy;
+            this.baseCcy = baseCcy;
+            this.buy = buy;
+            this.sale = sale;
         }
     }
 

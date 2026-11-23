@@ -2,11 +2,9 @@ package com.rudyii.currencyrates24.ui;
 
 import android.Manifest;
 import android.app.AlertDialog;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
-import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
@@ -18,6 +16,7 @@ import android.text.style.ForegroundColorSpan;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -33,8 +32,6 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
-import androidx.lifecycle.LiveData;
-import androidx.lifecycle.Observer;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
@@ -48,44 +45,38 @@ import com.rudyii.currencyrates24.widget.GraphWidgetProvider;
 import com.rudyii.currencyrates24.widget.NumbersWidgetProvider;
 import com.rudyii.currencyrates24.worker.RateSyncWorker;
 
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final int COLOR_BUY_DOT = Color.parseColor("#2E7D32");
-    private static final int COLOR_SALE_DOT = Color.parseColor("#1565C0");
+    private static final double UNCHANGED_PCT_THRESHOLD = 0.05;
 
     private final Handler refreshTimeoutHandler = new Handler(Looper.getMainLooper());
+    private final Map<String, Map<String, RateRecord>> cachedDailyRecords = new HashMap<>();
+    private final List<String> cachedSortedDates = new ArrayList<>();
+
     private CurrencyDbHelper db;
     private SwipeRefreshLayout swipeRefresh;
-    private TextView tvUsdDelta, tvEurDelta;
-    private RateGraphView graphUsd, graphEur;
+    private TextView tvTrendSummary;
+    private MultiTrendGraphView multiTrendGraph;
+    private TrendCalendarView trendCalendar;
     private Runnable refreshTimeoutRunnable;
 
-    public static String formatDeltaSummary(Context context, List<RateRecord> history) {
-        if (history == null || history.isEmpty()) {
-            return context.getString(R.string.waiting_for_data);
-        }
-        RateRecord latest = history.get(history.size() - 1);
-        if (history.size() == 1) {
-            return context.getString(R.string.delta_single_format, latest.buy, latest.sale);
-        }
-        RateRecord prev = history.get(history.size() - 2);
-
-        double buyDiff = latest.buy - prev.buy;
-        double buyPct = (buyDiff / prev.buy) * 100.0;
-        String buyArrow = buyDiff > 0 ? "▲" : (buyDiff < 0 ? "▼" : "•");
-
-        double saleDiff = latest.sale - prev.sale;
-        double salePct = (saleDiff / prev.sale) * 100.0;
-        String saleArrow = saleDiff > 0 ? "▲" : (saleDiff < 0 ? "▼" : "•");
-
-        return context.getString(R.string.delta_full_format,
-                latest.buy, buyArrow, buyDiff, buyPct,
-                latest.sale, saleArrow, saleDiff, salePct);
-    }
+    private UUID activeObservedWorkId = null;
+    private boolean activeWorkWasRunning = false;
+    private String lastPaintedDay = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -107,22 +98,29 @@ public class MainActivity extends AppCompatActivity {
 
         db = CurrencyDbHelper.getInstance(this);
         swipeRefresh = findViewById(R.id.swipeRefresh);
-        tvUsdDelta = findViewById(R.id.tvUsdDelta);
-        tvEurDelta = findViewById(R.id.tvEurDelta);
-        graphUsd = findViewById(R.id.graphUsd);
-        graphEur = findViewById(R.id.graphEur);
+        tvTrendSummary = findViewById(R.id.tvTrendSummary);
+        multiTrendGraph = findViewById(R.id.multiTrendGraph);
+        trendCalendar = findViewById(R.id.trendCalendar);
 
-        applyLegendDotColors(findViewById(R.id.tvUsdLegend));
-        applyLegendDotColors(findViewById(R.id.tvEurLegend));
+        colorizeThreeDots(findViewById(R.id.tvGraphLegend),
+                getString(R.string.legend_multi_trend),
+                ContextCompat.getColor(this, R.color.line_usd),
+                ContextCompat.getColor(this, R.color.line_eur),
+                ContextCompat.getColor(this, R.color.line_general));
+
+        colorizeThreeDots(findViewById(R.id.tvCalendarLegend),
+                getString(R.string.calendar_legend),
+                ContextCompat.getColor(this, R.color.cal_uah_unchanged),
+                ContextCompat.getColor(this, R.color.cal_uah_weak),
+                ContextCompat.getColor(this, R.color.cal_uah_strong));
+
+        trendCalendar.setOnDayClickListener(this::openDayDetailModal);
 
         swipeRefresh.setOnRefreshListener(() -> triggerManualSync(true));
 
-        graphUsd.setOnPointTapListener((record, rateType, rateValue) ->
-                showAlertDialog(record.ccy, rateType, rateValue, true));
-        graphEur.setOnPointTapListener((record, rateType, rateValue) ->
-                showAlertDialog(record.ccy, rateType, rateValue, true));
-
         findViewById(R.id.btnManageAlerts).setOnClickListener(v -> showManageAlertsDialog());
+
+        observeImmediateSyncWork();
 
         requestNotificationPermissionIfNeeded();
         if (db.getRatesForCurrency("USD").isEmpty()) {
@@ -130,71 +128,203 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void applyLegendDotColors(TextView legendView) {
-        if (legendView == null) return;
-        String text = getString(R.string.legend_buy_sale);
-        SpannableString spannable = new SpannableString(text);
+    private void observeImmediateSyncWork() {
+        WorkManager.getInstance(this)
+                .getWorkInfosForUniqueWorkLiveData(RateSyncWorker.IMMEDIATE_WORK_NAME)
+                .observe(this, workInfos -> {
+                    if (workInfos == null || workInfos.isEmpty()) return;
+                    WorkInfo workInfo = workInfos.get(0);
+                    UUID id = workInfo.getId();
+                    WorkInfo.State state = workInfo.getState();
 
-        int firstDot = text.indexOf('●');
-        if (firstDot >= 0) {
-            spannable.setSpan(new ForegroundColorSpan(COLOR_BUY_DOT),
-                    firstDot, firstDot + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            int secondDot = text.indexOf('●', firstDot + 1);
-            if (secondDot >= 0) {
-                spannable.setSpan(new ForegroundColorSpan(COLOR_SALE_DOT),
-                        secondDot, secondDot + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    if (!id.equals(activeObservedWorkId)) {
+                        if (state.isFinished()) {
+                            return;
+                        }
+                        activeObservedWorkId = id;
+                        activeWorkWasRunning = false;
+                        lastPaintedDay = "";
+                    }
+
+                    if (state == WorkInfo.State.ENQUEUED || state == WorkInfo.State.RUNNING) {
+                        db.saveSetting(SettingsActivity.KEY_PENDING_SETTINGS_RESYNC, "false");
+                        startRefreshSpinner();
+
+                        if (state == WorkInfo.State.RUNNING) {
+                            activeWorkWasRunning = true;
+                            String progressDay = workInfo.getProgress().getString(RateSyncWorker.PROGRESS_DAY_STAMP);
+                            if (progressDay != null && !progressDay.equals(lastPaintedDay)) {
+                                lastPaintedDay = progressDay;
+                                refreshUi();
+                            }
+                        }
+                    } else if (state.isFinished() || activeWorkWasRunning) {
+                        activeObservedWorkId = null;
+                        activeWorkWasRunning = false;
+                        stopRefreshSpinner();
+                        refreshUi();
+                        NumbersWidgetProvider.updateAllWidgets(MainActivity.this);
+                        GraphWidgetProvider.updateAllWidgets(MainActivity.this);
+                    }
+                });
+    }
+
+    private void startRefreshSpinner() {
+        if (swipeRefresh != null && !swipeRefresh.isRefreshing()) {
+            swipeRefresh.setRefreshing(true);
+        }
+        if (refreshTimeoutRunnable != null) {
+            refreshTimeoutHandler.removeCallbacks(refreshTimeoutRunnable);
+        }
+        refreshTimeoutRunnable = this::stopRefreshSpinner;
+        refreshTimeoutHandler.postDelayed(refreshTimeoutRunnable, 45000L);
+    }
+
+    private void stopRefreshSpinner() {
+        if (refreshTimeoutRunnable != null) {
+            refreshTimeoutHandler.removeCallbacks(refreshTimeoutRunnable);
+        }
+        if (swipeRefresh != null && swipeRefresh.isRefreshing()) {
+            swipeRefresh.setRefreshing(false);
+        }
+    }
+
+    private void openDayDetailModal(String dateKey) {
+        List<String> tracked = db.getTrackedCurrencies();
+        if (tracked.isEmpty()) return;
+
+        int dateIdx = cachedSortedDates.indexOf(dateKey);
+        String prevDateKey = (dateIdx > 0) ? cachedSortedDates.get(dateIdx - 1) : null;
+
+        Map<String, RateRecord> ratesForDate = new HashMap<>();
+        Map<String, RateRecord> prevRatesForDate = new HashMap<>();
+
+        for (String ccy : tracked) {
+            Map<String, RateRecord> byDay = cachedDailyRecords.get(ccy);
+            if (byDay == null) continue;
+            if (byDay.containsKey(dateKey)) {
+                ratesForDate.put(ccy, byDay.get(dateKey));
+            }
+            if (prevDateKey != null && byDay.containsKey(prevDateKey)) {
+                prevRatesForDate.put(ccy, byDay.get(prevDateKey));
             }
         }
-        legendView.setText(spannable);
+
+        DayRateModalDialog.show(
+                this,
+                dateKey,
+                tracked,
+                ratesForDate,
+                prevRatesForDate,
+                this::showWatchAlertDialog
+        );
+    }
+
+    private void showWatchAlertDialog(String currency, double buyRate, double saleRate) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(48, 24, 48, 12);
+
+        TextView tvHeader = new TextView(this);
+        tvHeader.setText(currency + " / UAH");
+        tvHeader.setTextSize(17f);
+        tvHeader.setTypeface(null, Typeface.BOLD);
+        tvHeader.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        tvHeader.setPadding(8, 4, 8, 16);
+        layout.addView(tvHeader);
+
+        String[] typeKeys = {"SALE", "BUY"};
+        String[] typeLabels = {getString(R.string.type_sale), getString(R.string.type_buy)};
+        Spinner spType = new Spinner(this);
+        spType.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, typeLabels));
+        layout.addView(spType);
+
+        String[] condKeys = {"ABOVE", "BELOW"};
+        String[] condLabels = {getString(R.string.cond_above), getString(R.string.cond_below)};
+        Spinner spCond = new Spinner(this);
+        spCond.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, condLabels));
+        layout.addView(spCond);
+
+        EditText etRate = new EditText(this);
+        etRate.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        double initialRate = saleRate > 0 ? saleRate : buyRate;
+        if (initialRate > 0) {
+            etRate.setText(String.format(Locale.US, "%.2f", initialRate));
+            etRate.setSelection(etRate.getText().length());
+        } else {
+            etRate.setHint(R.string.hint_target_rate);
+        }
+        layout.addView(etRate);
+
+        spType.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                double chosenPrefill = (position == 0) ? saleRate : buyRate;
+                if (chosenPrefill > 0) {
+                    etRate.setText(String.format(Locale.US, "%.2f", chosenPrefill));
+                    etRate.setSelection(etRate.getText().length());
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.dialog_set_alert_title)
+                .setView(layout)
+                .setPositiveButton(R.string.btn_save, (d, w) -> {
+                    String rateStr = etRate.getText().toString().trim().replace(',', '.');
+                    if (!rateStr.isEmpty()) {
+                        try {
+                            double target = Double.parseDouble(rateStr);
+                            String chosenType = typeKeys[spType.getSelectedItemPosition()];
+                            String chosenCond = condKeys[spCond.getSelectedItemPosition()];
+                            db.addAlert(currency, chosenType, chosenCond, target);
+                            Toast.makeText(this, R.string.toast_alert_saved, Toast.LENGTH_SHORT).show();
+                        } catch (NumberFormatException ignored) {
+                        }
+                    }
+                })
+                .setNegativeButton(R.string.btn_cancel, null)
+                .show();
+    }
+
+    private void colorizeThreeDots(TextView view, String text, int c1, int c2, int c3) {
+        if (view == null) return;
+        SpannableString spannable = new SpannableString(text);
+        int dot1 = text.indexOf('●');
+        if (dot1 >= 0) {
+            spannable.setSpan(new ForegroundColorSpan(c1), dot1, dot1 + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            int dot2 = text.indexOf('●', dot1 + 1);
+            if (dot2 >= 0) {
+                spannable.setSpan(new ForegroundColorSpan(c2), dot2, dot2 + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                int dot3 = text.indexOf('●', dot2 + 1);
+                if (dot3 >= 0) {
+                    spannable.setSpan(new ForegroundColorSpan(c3), dot3, dot3 + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+            }
+        }
+        view.setText(spannable);
     }
 
     private void triggerManualSync(boolean isManual) {
         if (isManual) {
             Toast.makeText(this, R.string.toast_syncing_rates, Toast.LENGTH_SHORT).show();
         }
-        swipeRefresh.setRefreshing(true);
-
-        if (refreshTimeoutRunnable != null) {
-            refreshTimeoutHandler.removeCallbacks(refreshTimeoutRunnable);
-        }
-        refreshTimeoutRunnable = () -> {
-            if (swipeRefresh != null && swipeRefresh.isRefreshing()) {
-                swipeRefresh.setRefreshing(false);
-            }
-        };
-        refreshTimeoutHandler.postDelayed(refreshTimeoutRunnable, 15000L);
-
-        UUID workId = RateSyncWorker.runImmediateSync(this, isManual);
-        LiveData<WorkInfo> liveData = WorkManager.getInstance(this).getWorkInfoByIdLiveData(workId);
-
-        liveData.observe(this, new Observer<WorkInfo>() {
-            private boolean wasRunning = false;
-
-            @Override
-            public void onChanged(WorkInfo workInfo) {
-                if (workInfo == null) return;
-                WorkInfo.State state = workInfo.getState();
-
-                if (state == WorkInfo.State.RUNNING) {
-                    wasRunning = true;
-                } else if (state.isFinished() || (wasRunning && state == WorkInfo.State.ENQUEUED)) {
-                    liveData.removeObserver(this);
-                    if (refreshTimeoutRunnable != null) {
-                        refreshTimeoutHandler.removeCallbacks(refreshTimeoutRunnable);
-                    }
-                    swipeRefresh.setRefreshing(false);
-                    refreshUi();
-                    NumbersWidgetProvider.updateAllWidgets(MainActivity.this);
-                    GraphWidgetProvider.updateAllWidgets(MainActivity.this);
-                }
-            }
-        });
+        startRefreshSpinner();
+        RateSyncWorker.runImmediateSync(this, isManual);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         syncStatusBarAppearance();
+        if (Boolean.parseBoolean(db.getSetting(SettingsActivity.KEY_PENDING_SETTINGS_RESYNC, "false"))) {
+            db.saveSetting(SettingsActivity.KEY_PENDING_SETTINGS_RESYNC, "false");
+            startRefreshSpinner();
+        }
         refreshUi();
     }
 
@@ -214,52 +344,166 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void refreshUi() {
-        List<RateRecord> usdList = db.getRatesForCurrency("USD");
-        List<RateRecord> eurList = db.getRatesForCurrency("EUR");
+        List<String> tracked = db.getTrackedCurrencies();
+        Set<String> allNeeded = new LinkedHashSet<>();
+        allNeeded.add("USD");
+        allNeeded.add("EUR");
+        allNeeded.addAll(tracked);
 
-        graphUsd.setRecords(usdList);
-        graphEur.setRecords(eurList);
+        SimpleDateFormat dayKeyFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+        Map<String, Map<String, Double>> ccyDailyAvgs = new HashMap<>();
+        TreeSet<String> allDates = new TreeSet<>();
+        cachedDailyRecords.clear();
 
-        tvUsdDelta.setText(formatDeltaSummary(this, usdList));
-        tvEurDelta.setText(formatDeltaSummary(this, eurList));
+        for (String ccy : allNeeded) {
+            Map<String, Double> perDayAvg = new LinkedHashMap<>();
+            Map<String, RateRecord> perDayRec = new LinkedHashMap<>();
+            for (RateRecord rec : db.getRatesForCurrency(ccy)) {
+                String dayKey = dayKeyFormat.format(new Date(rec.timestamp));
+                perDayAvg.put(dayKey, (rec.buy + rec.sale) / 2.0);
+                perDayRec.put(dayKey, rec);
+                allDates.add(dayKey);
+            }
+            ccyDailyAvgs.put(ccy, perDayAvg);
+            cachedDailyRecords.put(ccy, perDayRec);
+        }
+
+        cachedSortedDates.clear();
+        cachedSortedDates.addAll(allDates);
+
+        if (cachedSortedDates.isEmpty()) {
+            multiTrendGraph.setPoints(Collections.emptyList());
+            trendCalendar.setDayTrends(Collections.emptyMap());
+            tvTrendSummary.setText(R.string.waiting_for_data);
+            return;
+        }
+
+        Map<String, Double> usdMap = ccyDailyAvgs.getOrDefault("USD", Collections.emptyMap());
+        Map<String, Double> eurMap = ccyDailyAvgs.getOrDefault("EUR", Collections.emptyMap());
+
+        double baselineAnchor = 0.0;
+        for (String d : cachedSortedDates) {
+            Double u = usdMap.get(d);
+            Double e = eurMap.get(d);
+            if (u != null && e != null) {
+                baselineAnchor = (u + e) / 2.0;
+                break;
+            } else if (u != null) {
+                baselineAnchor = u;
+                break;
+            } else if (e != null) {
+                baselineAnchor = e;
+                break;
+            }
+        }
+        if (baselineAnchor <= 0.0) baselineAnchor = 40.0;
+
+        Map<String, Double> baseTrackedAvg = new HashMap<>();
+        for (String ccy : tracked) {
+            Map<String, Double> m = ccyDailyAvgs.get(ccy);
+            if (m != null) {
+                for (String d : cachedSortedDates) {
+                    if (m.containsKey(d)) {
+                        baseTrackedAvg.put(ccy, m.get(d));
+                        break;
+                    }
+                }
+            }
+        }
+
+        List<MultiTrendGraphView.TrendPoint> graphPoints = new ArrayList<>();
+        Map<String, TrendCalendarView.DayTrend> calendarTrends = new HashMap<>();
+
+        double latestUsd = 0.0;
+        double latestEur = 0.0;
+        double latestDailyBasketPct = 0.0;
+
+        for (int i = 0; i < cachedSortedDates.size(); i++) {
+            String dateKey = cachedSortedDates.get(i);
+            String shortLabel = dateKey.substring(8, 10) + "." + dateKey.substring(5, 7);
+
+            Double usdVal = usdMap.get(dateKey);
+            Double eurVal = eurMap.get(dateKey);
+            if (usdVal != null) latestUsd = usdVal;
+            if (eurVal != null) latestEur = eurVal;
+
+            double ratioSum = 0.0;
+            int ratioCount = 0;
+            for (String ccy : tracked) {
+                Map<String, Double> m = ccyDailyAvgs.get(ccy);
+                Double cur = (m != null) ? m.get(dateKey) : null;
+                Double base = baseTrackedAvg.get(ccy);
+                if (cur != null && base != null && base > 0) {
+                    ratioSum += (cur / base);
+                    ratioCount++;
+                }
+            }
+            Double generalIndexVal = (ratioCount > 0) ? baselineAnchor * (ratioSum / ratioCount) : null;
+
+            graphPoints.add(new MultiTrendGraphView.TrendPoint(
+                    dateKey, shortLabel, usdVal, eurVal, generalIndexVal));
+
+            if (i == 0) {
+                calendarTrends.put(dateKey, TrendCalendarView.DayTrend.UNCHANGED);
+                latestDailyBasketPct = 0.0;
+            } else {
+                String prevDateKey = cachedSortedDates.get(i - 1);
+                double pctChangeSum = 0.0;
+                int pairCount = 0;
+                for (String ccy : tracked) {
+                    Map<String, Double> m = ccyDailyAvgs.get(ccy);
+                    if (m == null) continue;
+                    Double cur = m.get(dateKey);
+                    Double prev = m.get(prevDateKey);
+                    if (cur != null && prev != null && prev > 0) {
+                        pctChangeSum += ((cur - prev) / prev) * 100.0;
+                        pairCount++;
+                    }
+                }
+                double avgPctChange = (pairCount > 0) ? (pctChangeSum / pairCount) : 0.0;
+                latestDailyBasketPct = avgPctChange;
+
+                if (Math.abs(avgPctChange) < UNCHANGED_PCT_THRESHOLD) {
+                    calendarTrends.put(dateKey, TrendCalendarView.DayTrend.UNCHANGED);
+                } else if (avgPctChange > 0) {
+                    calendarTrends.put(dateKey, TrendCalendarView.DayTrend.UAH_WEAK);
+                } else {
+                    calendarTrends.put(dateKey, TrendCalendarView.DayTrend.UAH_STRONG);
+                }
+            }
+        }
+
+        multiTrendGraph.setPoints(graphPoints);
+        trendCalendar.setDayTrends(calendarTrends);
+
+        String arrow = latestDailyBasketPct > UNCHANGED_PCT_THRESHOLD ? "▲"
+                : (latestDailyBasketPct < -UNCHANGED_PCT_THRESHOLD ? "▼" : "•");
+        tvTrendSummary.setText(getString(R.string.trend_summary_format,
+                latestUsd, latestEur, arrow, latestDailyBasketPct));
     }
 
-    private void showAlertDialog(String defaultCcy, String defaultType, double prefillRate, boolean lockTargetFields) {
+    private void showAlertDialog(String defaultCcy, String defaultType, double prefillRate) {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(48, 24, 48, 12);
 
-        String[] ccyKeys = {"USD", "EUR"};
+        List<String> trackedList = db.getTrackedCurrencies();
+        String[] ccyKeys = trackedList.toArray(new String[0]);
         String[] typeKeys = {"BUY", "SALE"};
         String[] typeLabels = {getString(R.string.type_buy), getString(R.string.type_sale)};
         String[] condKeys = {"ABOVE", "BELOW"};
         String[] condLabels = {getString(R.string.cond_above), getString(R.string.cond_below)};
 
         Spinner spCcy = new Spinner(this);
+        spCcy.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, ccyKeys));
+        int ccyIdx = trackedList.indexOf(defaultCcy);
+        if (ccyIdx >= 0) spCcy.setSelection(ccyIdx);
+        layout.addView(spCcy);
+
         Spinner spType = new Spinner(this);
-
-        if (lockTargetFields) {
-            String fixedTypeLabel = "SALE".equals(defaultType)
-                    ? getString(R.string.type_sale)
-                    : getString(R.string.type_buy);
-
-            TextView tvLockedInfo = new TextView(this);
-            tvLockedInfo.setText(getString(R.string.alert_fixed_target_format, defaultCcy, fixedTypeLabel));
-            tvLockedInfo.setTextSize(16f);
-            tvLockedInfo.setTypeface(null, Typeface.BOLD);
-            tvLockedInfo.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
-            tvLockedInfo.setPadding(8, 8, 8, 20);
-            layout.addView(tvLockedInfo);
-        } else {
-            spCcy.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, ccyKeys));
-            if ("EUR".equals(defaultCcy)) spCcy.setSelection(1);
-
-            spType.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, typeLabels));
-            if ("SALE".equals(defaultType)) spType.setSelection(1);
-
-            layout.addView(spCcy);
-            layout.addView(spType);
-        }
+        spType.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, typeLabels));
+        if ("SALE".equals(defaultType)) spType.setSelection(1);
+        layout.addView(spType);
 
         Spinner spCond = new Spinner(this);
         spCond.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, condLabels));
@@ -283,8 +527,8 @@ public class MainActivity extends AppCompatActivity {
                     if (!rateStr.isEmpty()) {
                         try {
                             double target = Double.parseDouble(rateStr);
-                            String chosenCcy = lockTargetFields ? defaultCcy : ccyKeys[spCcy.getSelectedItemPosition()];
-                            String chosenType = lockTargetFields ? defaultType : typeKeys[spType.getSelectedItemPosition()];
+                            String chosenCcy = ccyKeys[spCcy.getSelectedItemPosition()];
+                            String chosenType = typeKeys[spType.getSelectedItemPosition()];
                             String chosenCond = condKeys[spCond.getSelectedItemPosition()];
 
                             db.addAlert(chosenCcy, chosenType, chosenCond, target);
@@ -333,7 +577,8 @@ public class MainActivity extends AppCompatActivity {
             startActivity(new Intent(this, SettingsActivity.class));
             return true;
         } else if (id == R.id.action_add_alert) {
-            showAlertDialog("USD", "BUY", 0, false);
+            List<String> tracked = db.getTrackedCurrencies();
+            showAlertDialog(tracked.isEmpty() ? "USD" : tracked.get(0), "BUY", 0);
             return true;
         }
         return super.onOptionsItemSelected(item);

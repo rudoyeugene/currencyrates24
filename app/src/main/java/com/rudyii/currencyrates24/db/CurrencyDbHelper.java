@@ -9,8 +9,19 @@ import android.database.sqlite.SQLiteOpenHelper;
 import com.rudyii.currencyrates24.model.PriceAlert;
 import com.rudyii.currencyrates24.model.RateRecord;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 public class CurrencyDbHelper extends SQLiteOpenHelper {
@@ -18,6 +29,12 @@ public class CurrencyDbHelper extends SQLiteOpenHelper {
     public static final String TABLE_RATES = "rates";
     public static final String TABLE_ALERTS = "alerts";
     public static final String TABLE_SETTINGS = "settings";
+
+    public static final List<String> SUPPORTED_CURRENCIES = Collections.unmodifiableList(
+            Arrays.asList("USD", "EUR", "GBP", "CHF", "PLN", "CAD", "SEK", "XAU")
+    );
+
+    private static final String DEFAULT_TRACKED_CURRENCIES = "USD,EUR";
     private static final String DB_NAME = "currency_rates.db";
     private static final int DB_VERSION = 1;
     private static CurrencyDbHelper instance;
@@ -61,6 +78,7 @@ public class CurrencyDbHelper extends SQLiteOpenHelper {
         setSettingInternal(db, "history_days", "28");
         setSettingInternal(db, "theme_mode", "SYSTEM"); // SYSTEM, LIGHT, DARK
         setSettingInternal(db, "public_rates", "true");
+        setSettingInternal(db, "tracked_currencies", DEFAULT_TRACKED_CURRENCIES);
     }
 
     @Override
@@ -109,8 +127,89 @@ public class CurrencyDbHelper extends SQLiteOpenHelper {
         return Boolean.parseBoolean(getSetting("public_rates", "true"));
     }
 
+    public List<String> getTrackedCurrencies() {
+        String raw = getSetting("tracked_currencies", DEFAULT_TRACKED_CURRENCIES);
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        if (raw != null && !raw.trim().isEmpty()) {
+            for (String token : raw.split(",")) {
+                String code = token.trim().toUpperCase(Locale.US);
+                if (SUPPORTED_CURRENCIES.contains(code)) {
+                    result.add(code);
+                }
+            }
+        }
+        if (result.isEmpty()) {
+            result.add("USD");
+            result.add("EUR");
+        }
+        return new ArrayList<>(result);
+    }
+
+    public void setTrackedCurrencies(List<String> currencies) {
+        LinkedHashSet<String> cleaned = new LinkedHashSet<>();
+        if (currencies != null) {
+            for (String code : currencies) {
+                if (code != null) {
+                    String upper = code.trim().toUpperCase(Locale.US);
+                    if (SUPPORTED_CURRENCIES.contains(upper)) {
+                        cleaned.add(upper);
+                    }
+                }
+            }
+        }
+        if (cleaned.isEmpty()) {
+            cleaned.add("USD");
+            cleaned.add("EUR");
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String c : cleaned) {
+            if (sb.length() > 0) sb.append(',');
+            sb.append(c);
+        }
+        saveSetting("tracked_currencies", sb.toString());
+    }
+
+    public String getNextTrackedCurrency(String current) {
+        List<String> tracked = getTrackedCurrencies();
+        if (tracked.isEmpty()) return "USD";
+        int idx = tracked.indexOf(current);
+        if (idx < 0 || idx + 1 >= tracked.size()) {
+            return tracked.get(0);
+        }
+        return tracked.get(idx + 1);
+    }
+
     public void clearRates() {
         getWritableDatabase().delete(TABLE_RATES, null, null);
+    }
+
+    public Set<String> getCompleteStoredDates(Collection<String> requiredCurrencies) {
+        Set<String> completeDates = new HashSet<>();
+        if (requiredCurrencies == null || requiredCurrencies.isEmpty()) {
+            return completeDates;
+        }
+        Set<String> requiredSet = new HashSet<>(requiredCurrencies);
+        Map<String, Set<String>> dateToCurrencies = new HashMap<>();
+        SimpleDateFormat dayKeyFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+
+        SQLiteDatabase db = getReadableDatabase();
+        try (Cursor c = db.query(TABLE_RATES, new String[]{"ccy", "timestamp"},
+                null, null, null, null, null)) {
+            while (c.moveToNext()) {
+                String ccy = c.getString(0);
+                if (!requiredSet.contains(ccy)) continue;
+                long ts = c.getLong(1);
+                String dayKey = dayKeyFormat.format(new Date(ts));
+                dateToCurrencies.computeIfAbsent(dayKey, k -> new HashSet<>()).add(ccy);
+            }
+        }
+
+        for (Map.Entry<String, Set<String>> entry : dateToCurrencies.entrySet()) {
+            if (entry.getValue().containsAll(requiredSet)) {
+                completeDates.add(entry.getKey());
+            }
+        }
+        return completeDates;
     }
 
     public RateRecord getLatestRate(String ccy) {

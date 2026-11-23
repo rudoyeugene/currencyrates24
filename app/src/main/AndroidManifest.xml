@@ -28,6 +28,14 @@
             android:label="@string/title_settings"
             android:parentActivityName=".ui.MainActivity" />
 
+        <activity
+            android:name=".widget.WidgetConfigureActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <!-- Widget 1: Numbers & Delta -->
         <receiver
             android:name=".widget.NumbersWidgetProvider"

@@ -11,6 +11,12 @@
     <color name="graph_axis_text">#4B5563</color>
     <color name="line_buy">#4CAF50</color>
     <color name="line_sale">#42A5F5</color>
+    <color name="line_usd">#2E7D32</color>
+    <color name="line_eur">#1565C0</color>
+    <color name="line_general">#F59E0B</color>
+    <color name="cal_uah_unchanged">#4CAF50</color>
+    <color name="cal_uah_weak">#EF4444</color>
+    <color name="cal_uah_strong">#42A5F5</color>
     <color name="widget_bg">#F2FFFFFF</color>
     <color name="widget_text">#111827</color>
 </resources>

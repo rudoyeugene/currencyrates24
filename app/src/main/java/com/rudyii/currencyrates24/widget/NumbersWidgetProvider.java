@@ -31,8 +31,6 @@ public class NumbersWidgetProvider extends AppWidgetProvider {
     private static final int COLOR_UP = 0xFF4ADE80;
     private static final int COLOR_DOWN = 0xFFEF4444;
 
-    // Launcher width thresholds (dp):
-    // 2x1: ~110–179dp | 3x1: ~180–249dp | 4x1+: >= 250dp
     private static final int WIDTH_3X1_DP = 180;
     private static final int WIDTH_4X1_DP = 250;
 
@@ -46,9 +44,10 @@ public class NumbersWidgetProvider extends AppWidgetProvider {
 
     public static void updateSingleWidget(Context context, AppWidgetManager manager, int widgetId) {
         CurrencyDbHelper db = CurrencyDbHelper.getInstance(context);
-        String ccy = db.getSetting("widget_ccy_" + widgetId, "USD");
-        if (!"USD".equals(ccy) && !"EUR".equals(ccy)) {
-            ccy = "USD";
+        List<String> tracked = db.getTrackedCurrencies();
+        String ccy = db.getSetting("widget_ccy_" + widgetId, tracked.get(0));
+        if (!CurrencyDbHelper.SUPPORTED_CURRENCIES.contains(ccy)) {
+            ccy = tracked.get(0);
         }
 
         Bundle options = manager.getAppWidgetOptions(widgetId);
@@ -58,13 +57,11 @@ public class NumbersWidgetProvider extends AppWidgetProvider {
 
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_numbers);
 
-        // Open MainActivity on root tap
         Intent openApp = new Intent(context, MainActivity.class);
         PendingIntent openPi = PendingIntent.getActivity(context, widgetId, openApp,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         views.setOnClickPendingIntent(R.id.widgetRoot, openPi);
 
-        // Toggle USD <-> EUR on title tap
         Intent toggleIntent = new Intent(context, NumbersWidgetProvider.class);
         toggleIntent.setAction(ACTION_TOGGLE_CURRENCY);
         toggleIntent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId);
@@ -73,7 +70,6 @@ public class NumbersWidgetProvider extends AppWidgetProvider {
         views.setOnClickPendingIntent(R.id.tvWideTitle, togglePi);
         views.setOnClickPendingIntent(R.id.tvStackedTitle, togglePi);
 
-        // Manual refresh icon
         Intent refreshIntent = new Intent(context, NumbersWidgetProvider.class);
         refreshIntent.setAction(ACTION_MANUAL_REFRESH);
         PendingIntent refreshPi = PendingIntent.getBroadcast(context, widgetId + 10000, refreshIntent,
@@ -96,7 +92,6 @@ public class NumbersWidgetProvider extends AppWidgetProvider {
             views.setViewVisibility(R.id.llStackedNumbers, View.VISIBLE);
             views.setTextViewText(R.id.tvStackedTitle, ccy + "/UAH ▾");
 
-            // Scale text slightly larger on 3x1 compared to 2x1
             float titleSp = is3x1 ? 14f : 12.5f;
             float labelSp = is3x1 ? 14f : 12.5f;
             float valSp = is3x1 ? 21f : 18f;
@@ -183,7 +178,7 @@ public class NumbersWidgetProvider extends AppWidgetProvider {
             if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
                 CurrencyDbHelper db = CurrencyDbHelper.getInstance(context);
                 String current = db.getSetting("widget_ccy_" + widgetId, "USD");
-                String next = "USD".equals(current) ? "EUR" : "USD";
+                String next = db.getNextTrackedCurrency(current);
                 db.saveSetting("widget_ccy_" + widgetId, next);
                 updateSingleWidget(context, AppWidgetManager.getInstance(context), widgetId);
             }
