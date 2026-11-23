@@ -14,8 +14,8 @@ android {
         applicationId = "com.rudyii.currencyrates24"
         minSdk = 34
         targetSdk = 37
-        versionCode = 101
-        versionName = "1.0.1"
+        versionCode = 120
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
