@@ -119,4 +119,5 @@
     <string name="btn_watch">Watch</string>
     <string name="modal_watch_type_label">Rate type to watch:</string>
     <string name="toast_using_live_fallback">Archive unavailable for today; loaded live commercial rates</string>
+    <string name="calendar_last_updated_format">Last updated: %1$s</string>
 </resources>

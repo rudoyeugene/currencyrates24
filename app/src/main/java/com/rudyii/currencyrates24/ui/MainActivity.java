@@ -45,6 +45,7 @@ import com.rudyii.currencyrates24.widget.GraphWidgetProvider;
 import com.rudyii.currencyrates24.widget.NumbersWidgetProvider;
 import com.rudyii.currencyrates24.worker.RateSyncWorker;
 
+import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -72,6 +73,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvTrendSummary;
     private MultiTrendGraphView multiTrendGraph;
     private TrendCalendarView trendCalendar;
+    private TextView tvCalendarLastUpdated;
     private Runnable refreshTimeoutRunnable;
 
     private UUID activeObservedWorkId = null;
@@ -101,6 +103,7 @@ public class MainActivity extends AppCompatActivity {
         tvTrendSummary = findViewById(R.id.tvTrendSummary);
         multiTrendGraph = findViewById(R.id.multiTrendGraph);
         trendCalendar = findViewById(R.id.trendCalendar);
+        tvCalendarLastUpdated = findViewById(R.id.tvCalendarLastUpdated);
 
         colorizeThreeDots(findViewById(R.id.tvGraphLegend),
                 getString(R.string.legend_multi_trend),
@@ -354,6 +357,7 @@ public class MainActivity extends AppCompatActivity {
         Map<String, Map<String, Double>> ccyDailyAvgs = new HashMap<>();
         TreeSet<String> allDates = new TreeSet<>();
         cachedDailyRecords.clear();
+        long latestRecordTimestamp = 0L;
 
         for (String ccy : allNeeded) {
             Map<String, Double> perDayAvg = new LinkedHashMap<>();
@@ -363,6 +367,9 @@ public class MainActivity extends AppCompatActivity {
                 perDayAvg.put(dayKey, (rec.buy + rec.sale) / 2.0);
                 perDayRec.put(dayKey, rec);
                 allDates.add(dayKey);
+                if (rec.timestamp > latestRecordTimestamp) {
+                    latestRecordTimestamp = rec.timestamp;
+                }
             }
             ccyDailyAvgs.put(ccy, perDayAvg);
             cachedDailyRecords.put(ccy, perDayRec);
@@ -370,6 +377,20 @@ public class MainActivity extends AppCompatActivity {
 
         cachedSortedDates.clear();
         cachedSortedDates.addAll(allDates);
+
+        if (tvCalendarLastUpdated != null) {
+            if (latestRecordTimestamp > 0L) {
+                DateFormat dtFormat = DateFormat.getDateTimeInstance(
+                        DateFormat.SHORT, DateFormat.SHORT, Locale.getDefault());
+                String formattedTime = dtFormat.format(new Date(latestRecordTimestamp));
+                tvCalendarLastUpdated.setText(
+                        getString(R.string.calendar_last_updated_format, formattedTime));
+                tvCalendarLastUpdated.setVisibility(View.VISIBLE);
+            } else {
+                tvCalendarLastUpdated.setText("");
+                tvCalendarLastUpdated.setVisibility(View.GONE);
+            }
+        }
 
         if (cachedSortedDates.isEmpty()) {
             multiTrendGraph.setPoints(Collections.emptyList());

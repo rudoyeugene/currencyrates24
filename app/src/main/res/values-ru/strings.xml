@@ -119,4 +119,5 @@
     <string name="btn_watch">Следить</string>
     <string name="modal_watch_type_label">Тип курса для отслеживания:</string>
     <string name="toast_using_live_fallback">Архив за сегодня недоступен; загружен текущий коммерческий курс</string>
+    <string name="calendar_last_updated_format">Последнее обновление: %1$s</string>
 </resources>
